@@ -21,10 +21,15 @@ import { PaymentLedger } from './ledger';
 import { MandateStore, issueMandate } from './mandates';
 import { PaymentPolicyEngine, SAFE_DEFAULTS } from './policy';
 import type { PaymentIntent } from './schemas';
+import { MARKETPLACE } from './business/tools';
 
-export const WEATHER_SERVICE = 'https://weather.circle-marketplace.example/forecast';
-export const COMPUTE_SERVICE = 'https://compute.circle-marketplace.example/embed';
-export const ATTACKER_SERVICE = 'https://claim-your-airdrop.example/collect';
+// One marketplace for the whole console. The scripted scenarios and the live
+// agent buy from the same listings under the same mandates, so a judge is
+// looking at one coherent world rather than two demos that happen to share a
+// colour scheme.
+export const WEATHER_SERVICE = MARKETPLACE[0]!.url;
+export const COMPUTE_SERVICE = MARKETPLACE[2]!.url;
+export const ATTACKER_SERVICE = MARKETPLACE[3]!.url;
 
 export interface ScenarioResult {
   readonly scenario: string;
@@ -65,6 +70,14 @@ export function createDemoWorld(quote?: (url: string) => PriceQuote): DemoWorld 
       issuedBy: 'alice',
       owner: 'erin',
       reason: 'embedding compute for the support classifier',
+      expiresInDays: 30,
+    }),
+    issueMandate({
+      counterparty: MARKETPLACE[1]!.url,
+      maxPerPaymentUsdc: '0.01',
+      issuedBy: 'alice',
+      owner: 'dana',
+      reason: 'budget weather source; low cap because quality is unproven',
       expiresInDays: 30,
     }),
   ]);
