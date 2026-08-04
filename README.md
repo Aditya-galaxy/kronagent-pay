@@ -105,4 +105,18 @@ Per the competition's *New Projects Only* requirement:
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Deliberately permissive so judges can test *"free of charge and without any restriction"* as the rules require.
+**Source-available, not open source** — PolyForm Noncommercial 1.0.0, with an
+explicit **Competition Grant** on top. See [LICENSE](LICENSE).
+
+You may read, study, fork and modify this for noncommercial purposes;
+commercial use needs a separate licence. The Competition Grant gives XPRIZE,
+Google, Circle, PHD Moonshots, Devpost, hacker.fund and their judges an
+irrevocable, royalty-free, unrestricted licence to run, host, test, evaluate
+and demonstrate this software for everything connected with the competition —
+satisfying the rules' *"free of charge and without any restriction"*
+requirement without making the work commercially free to everyone else.
+
+The grant is stated explicitly because PolyForm's own permitted-use clauses
+cover charitable, educational, research, public-safety and government
+organizations — not the competition's commercial sponsors. Relying on
+interpretation there would have left an argument to have at judging time.
