@@ -26,6 +26,12 @@ import {
   type ScenarioName,
 } from './scenarios';
 import { isExpired } from './mandates';
+import { runJob } from './business/loop';
+import { MARKETPLACE } from './business/tools';
+import { Decimal, USDC } from './decimal';
+
+/** What a customer pays for one answered question. Inputs come out of this. */
+const JOB_PRICE_USDC = USDC('1.00');
 
 const PORT = Number(process.env['PORT'] ?? 8080);
 
@@ -103,6 +109,48 @@ const server = Bun.serve({
       return json({ ok: true, ...state() });
     }
 
+    // The live agent. A judge types a question; the agent plans, prices, buys
+    // what it judges worth buying, and answers — every purchase routed through
+    // the same gate the scripted scenarios use, against the same mandates.
+    if (url.pathname === '/api/job' && request.method === 'POST') {
+      const body = (await request.json().catch(() => ({}))) as { question?: string };
+      const question = (body.question ?? '').trim();
+      if (!question) return json({ error: 'a question is required' }, 400);
+
+      const result = await runJob({
+        question,
+        buy: async (sourceUrl, price) => {
+          const authorized = await world.gate('circle_pay_service', {
+            url: sourceUrl,
+            address: '0xagent00000000000000000000000000000000000',
+            method: 'GET',
+            dataJson: JSON.stringify({ question }),
+          });
+          if (!authorized) {
+            // Surfaced back to the agent as the policy's own words, so its
+            // next move is informed rather than a blind retry.
+            throw new Error(world.queue.at(-1)?.reason ?? 'refused by the spend policy');
+          }
+          const source = MARKETPLACE.find((s) => s.url === sourceUrl);
+          if (!source) throw new Error(`unknown source ${sourceUrl}`);
+          return source.payload;
+        },
+      });
+
+      const cogs = new Decimal(result.spentUsdc);
+      return json({
+        job: {
+          ...result,
+          // The unit economics of this one job. This is the line item that
+          // makes it a business rather than a demo.
+          priceUsdc: JOB_PRICE_USDC.toString(),
+          cogsUsdc: cogs.toString(),
+          marginUsdc: JOB_PRICE_USDC.minus(cogs).toString(),
+        },
+        ...state(),
+      });
+    }
+
     const scenarioMatch = url.pathname.match(/^\/api\/run\/([a-z]+)$/);
     if (scenarioMatch && request.method === 'POST') {
       const name = scenarioMatch[1] as ScenarioName;
@@ -160,6 +208,20 @@ const PAGE = /* html */ `<!doctype html>
   .bar div { height:100%; background:var(--green); }
   .chain-ok { color:var(--green); } .chain-bad { color:var(--red); }
   .narr { color:var(--muted); font-size:13px; margin:10px 0 0; }
+  .ask { display:flex; gap:10px; }
+  .ask input { flex:1; background:#0d1421; border:1px solid var(--border); border-radius:8px;
+               color:var(--text); padding:10px 12px; font:inherit; }
+  .ask input:focus { outline:none; border-color:var(--blue); }
+  .econ { display:flex; gap:22px; margin:14px 0 10px; flex-wrap:wrap; }
+  .econ div { font-size:12px; color:var(--muted); }
+  .econ b { display:block; font-family:var(--mono); font-size:16px; color:var(--text); font-weight:600; }
+  .econ .good b { color:var(--green); }
+  .trace { font-family:var(--mono); font-size:12px; background:#0d1421; border:1px solid var(--border);
+           border-radius:8px; padding:10px 12px; max-height:230px; overflow:auto; margin-top:10px; }
+  .trace div { padding:2px 0; color:var(--muted); }
+  .trace .paidline { color:var(--green); } .trace .refline { color:var(--amber); }
+  .answer { background:#0d1421; border-left:3px solid var(--blue); border-radius:6px;
+            padding:12px 14px; margin-top:12px; }
 </style>
 </head>
 <body><div class="wrap">
@@ -168,10 +230,25 @@ const PAGE = /* html */ `<!doctype html>
   Every button below runs the real policy engine, mandates, rolling budget and hash-chained
   ledger — the same code path the live agent uses against Circle's Agent Stack.</p>
 
+  <div class="panel" style="margin-bottom:20px">
+    <h2>Ask the agent — it buys the data it needs</h2>
+    <p class="narr" style="margin:0 0 12px">
+      A customer question. The agent plans, searches the marketplace, decides what is worth its
+      price, pays in USDC through the policy gate, and answers — with no human in the loop.
+      It sells the answer for 1.00 USDC and buys its own inputs, so every job has a real margin.
+    </p>
+    <div class="ask">
+      <input id="question" value="What are delivery conditions in NYC on Thursday?"
+             placeholder="Ask the agent a question…">
+      <button id="askbtn" class="reset" onclick="ask()" style="width:auto">Run job</button>
+    </div>
+    <div id="job"></div>
+  </div>
+
   <div class="grid">
     <div>
       <div class="panel">
-        <h2>Run a scenario</h2>
+        <h2>Or run a scripted scenario</h2>
         <div id="scenarios"></div>
         <button class="reset" onclick="reset()">Reset state</button>
         <p class="narr" id="narrative"></p>
@@ -242,6 +319,40 @@ function render(s) {
       s.queue.map(q => '<tr><td><code>' + esc(q.counterparty.replace(/^https?:\\/\\//,'')) + '</code></td>'
         + '<td class="mono">' + esc(q.amountUsdc) + '</td>'
         + '<td class="muted">' + esc(q.reason) + '</td></tr>').join('');
+}
+
+function renderJob(j) {
+  const traceLine = s => {
+    const cls = s.event === 'buy_data.paid' ? 'paidline' : s.event === 'buy_data.refused' ? 'refline' : '';
+    return '<div class="' + cls + '">' + esc(s.event) + '  ' + esc(JSON.stringify(s.detail).slice(0,150)) + '</div>';
+  };
+  document.getElementById('job').innerHTML =
+    '<div class="econ">'
+    + '<div>SOLD FOR<b>' + esc(j.priceUsdc) + '</b></div>'
+    + '<div>INPUTS COST<b>' + esc(j.cogsUsdc) + '</b></div>'
+    + '<div class="good">MARGIN<b>' + esc(j.marginUsdc) + '</b></div>'
+    + '<div>SOURCES BOUGHT<b>' + j.purchases.length + '</b></div>'
+    + '<div>REFUSED<b>' + j.refusals.length + '</b></div>'
+    + '<div>MODEL<b style="font-size:12px">' + esc(j.model) + '</b></div>'
+    + '</div>'
+    + '<div class="answer"><strong>Answer</strong> <span class="muted">(' + esc(j.confidence) + ' confidence)</span><br>' + esc(j.answer) + '</div>'
+    + '<div class="trace">' + j.steps.map(traceLine).join('') + '</div>';
+}
+
+async function ask() {
+  const btn = document.getElementById('askbtn');
+  btn.disabled = true; btn.textContent = 'Agent working…';
+  document.getElementById('narrative').textContent = '';
+  try {
+    const res = await fetch('/api/job', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ question: document.getElementById('question').value }),
+    });
+    const data = await res.json();
+    if (data.error) { alert(data.error); return; }
+    renderJob(data.job);
+    render(data);
+  } finally { btn.disabled = false; btn.textContent = 'Run job'; }
 }
 
 async function run(name) {
