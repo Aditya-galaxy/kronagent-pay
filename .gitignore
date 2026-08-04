@@ -1,8 +1,6 @@
+node_modules/
+dist/
+.env
+*.tsbuildinfo
 __pycache__/
 *.pyc
-.venv/
-.env
-*.egg-info/
-.pytest_cache/
-kronpay_*.json
-kronpay_*.jsonl
