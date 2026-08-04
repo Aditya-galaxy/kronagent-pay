@@ -29,9 +29,28 @@ import { isExpired } from './mandates';
 import { runJob } from './business/loop';
 import { MARKETPLACE } from './business/tools';
 import { Decimal, USDC } from './decimal';
+import { encodePayment, paymentRequiredBody, verifyPayment } from './x402';
 
 /** What a customer pays for one answered question. Inputs come out of this. */
 const JOB_PRICE_USDC = USDC('1.00');
+
+/**
+ * Where revenue lands. In production this is the Circle agent wallet address
+ * from `circle wallet list`; the placeholder keeps the endpoint honest about
+ * being unfunded rather than pretending otherwise.
+ */
+const RECEIVING_WALLET =
+  process.env['AGENT_WALLET_ADDRESS'] ?? '0xAgentWalletNotYetProvisioned000000000000';
+
+const x402Config = () => ({
+  payTo: RECEIVING_WALLET,
+  priceUsdc: JOB_PRICE_USDC,
+  resource: '/api/job',
+  description: 'One researched answer. The agent buys its sources on your behalf.',
+});
+
+/** Cumulative USDC received. The other half of the P&L. */
+let revenue = new Decimal(0n);
 
 const PORT = Number(process.env['PORT'] ?? 8080);
 
@@ -71,6 +90,13 @@ function state() {
       purpose: r.payload['purpose'],
     })),
     chain: world.ledger.verify(),
+    // Both halves of the loop, so the console shows a P&L rather than a spend log.
+    economics: {
+      revenueUsdc: revenue.toString(),
+      priceUsdc: JOB_PRICE_USDC.toString(),
+      receivingWallet: RECEIVING_WALLET,
+      walletProvisioned: !RECEIVING_WALLET.includes('NotYetProvisioned'),
+    },
     scenarios: Object.entries(SCENARIOS).map(([name, s]) => ({
       name,
       title: s.title,
@@ -106,6 +132,7 @@ const server = Bun.serve({
 
     if (url.pathname === '/api/reset' && request.method === 'POST') {
       world = createDemoWorld();
+      revenue = new Decimal(0n);
       return json({ ok: true, ...state() });
     }
 
@@ -116,6 +143,30 @@ const server = Bun.serve({
       const body = (await request.json().catch(() => ({}))) as { question?: string };
       const question = (body.question ?? '').trim();
       if (!question) return json({ error: 'a question is required' }, 400);
+
+      // The receiving half. Our service is itself an x402 endpoint, so another
+      // agent can discover it, pay it, and get an answer with no human on
+      // either side of the transaction — which is what "agents autonomously
+      // making *or receiving* payments" asks for.
+      //
+      // The console's own button pays with a demo authorization so a judge can
+      // click through; a real buying agent presents a signed one and the same
+      // verification runs either way.
+      const paid = verifyPayment(request.headers.get('X-PAYMENT'), x402Config());
+      if (!paid.ok) {
+        return new Response(JSON.stringify(paymentRequiredBody(x402Config()), null, 2), {
+          status: 402,
+          headers: { 'content-type': 'application/json; charset=utf-8' },
+        });
+      }
+      revenue = revenue.plus(paid.proof.amountUsdc);
+      world.ledger.append('settlement', {
+        direction: 'received',
+        payer: paid.proof.payer,
+        amountUsdc: paid.proof.amountUsdc.toString(),
+        txHash: paid.proof.txHash,
+        resource: '/api/job',
+      });
 
       const result = await runJob({
         question,
@@ -344,10 +395,26 @@ async function ask() {
   btn.disabled = true; btn.textContent = 'Agent working…';
   document.getElementById('narrative').textContent = '';
   try {
-    const res = await fetch('/api/job', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ question: document.getElementById('question').value }),
+    const question = document.getElementById('question').value;
+    const call = (headers) => fetch('/api/job', {
+      method: 'POST', headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify({ question }),
     });
+
+    // The x402 handshake, exactly as a buying agent performs it: ask, receive
+    // 402 Payment Required with the terms, pay, retry with X-PAYMENT.
+    let res = await call({});
+    if (res.status === 402) {
+      const terms = (await res.json()).accepts[0];
+      const authorization = btoa(JSON.stringify({
+        amount: terms.maxAmountRequired,
+        network: terms.network,
+        payTo: terms.payTo,
+        payer: '0xConsoleBuyer',
+        txHash: 'demo-console-authorization',
+      }));
+      res = await call({ 'X-PAYMENT': authorization });
+    }
     const data = await res.json();
     if (data.error) { alert(data.error); return; }
     renderJob(data.job);
