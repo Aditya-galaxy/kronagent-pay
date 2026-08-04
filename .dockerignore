@@ -1,0 +1,10 @@
+node_modules
+.git
+.github
+.claude
+*.md
+!README.md
+.env*
+dist
+*.tsbuildinfo
+**/*.test.ts
