@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Testing — Kronagent</title>
+<meta name="description" content="Property-based invariants and deterministic simulation testing: 400,000 decisions across 248 simulated years, every run reproducible from its seed." />
+<meta property="og:title" content="Kronagent — how it is tested" />
+<meta property="og:description" content="Example tests prove the cases we thought of. For the component that decides whether money moves, that is the weaker claim." />
+<meta name="theme-color" content="#000000" />
+<link rel="canonical" href="https://kronagent.dev/testing.html" />
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+
+<nav><div class="wrap">
+  <a class="brand" href="/">Kronagent</a>
+  <a class="l" href="/architecture.html">Architecture</a>
+  <a class="l" href="/security.html">Security</a>
+  <a class="l opt" href="/testing.html" aria-current="page">Testing</a>
+  <a class="l" href="/#claim">Claim priority →</a>
+</div></nav>
+
+<main>
+
+<section class="hero"><div class="wrap">
+  <span class="eyebrow">Testing</span>
+  <h1>Proven, not sampled</h1>
+  <p class="lede">Example tests prove the engine handles the cases we thought of. For the component
+  that decides whether money leaves your account, that is the weaker claim.</p>
+</div></section>
+
+<hr />
+
+<section><div class="wrap">
+  <span class="num">400,000</span>
+  <span class="num-cap">DECISIONS · 248 SIMULATED YEARS · 3.6 SECONDS · ZERO VIOLATIONS</span>
+</div></section>
+
+<hr />
+
+<section><div class="wrap">
+  <h2>Properties, not examples</h2>
+  <p>Each of the <a href="/security.html">ten invariants</a> is stated as a property that must hold
+  for <em>all</em> inputs, and a generator searches for a counterexample. When it finds one it
+  shrinks it to the smallest failing case — the difference between “something broke” and “here is
+  the one-line reproduction.”</p>
+  <p>The interesting failure is never the case you imagined. It is an amount one micro-unit over a
+  cap, a counterparty that is the empty string, a permission expiring on the same millisecond as
+  the payment. Roughly 11,700 assertions run per suite.</p>
+
+  <div class="note"><p>Conservation — that authorized spend never exceeds the window cap — is
+  checked against an independent tally, not by asking the budget whether it agrees with itself. An
+  invariant that consults the component under test proves nothing.</p></div>
+</div></section>
+
+<hr />
+
+<section><div class="wrap">
+  <h2>Deterministic simulation</h2>
+  <p>The discipline FoundationDB pioneered and TigerBeetle built a financial database on: control
+  every source of non-determinism — clock, randomness, faults — so a run is a pure function of its
+  seed. Then generate hostile histories by the thousand, assert the invariants after <em>every
+  step</em>, and replay any failure exactly instead of chasing it.</p>
+
+  <p>Property tests ask whether a single decision holds. This asks the harder question: does the
+  system hold across a long hostile history — permissions granted and revoked and expiring, clocks
+  jumping days, budgets filling and ageing out, an agent proposing attacker payments throughout?
+  <strong>Payment bugs live in histories, not in single calls.</strong></p>
+
+  <div class="term"><span class="c-dim">$ bun run sweep</span>
+runs           <span class="c-acc">200 seeds</span>
+decisions      <span class="c-acc">400,000</span>
+simulated time <span class="c-acc">248.5 years</span>
+wall clock     <span class="c-acc">3.6s</span>
+violations     <span class="c-ok">none</span></div>
+
+  <p>This was cheap because the system was built to be simulatable: the clock is injected
+  everywhere, the engine is pure, the price resolver is a parameter, and nothing in the decision
+  path reads a hidden global. That was a constraint from the first commit, not a retrofit.</p>
+</div></section>
+
+<hr />
+
+<section><div class="wrap">
+  <h2>Two defects this found in itself</h2>
+  <div class="list">
+    <div class="item"><div class="k">Ledger</div><div>
+      <h3>The payload was never hashed</h3>
+      <p>Canonical serialization used a top-level key list as a filter, which JSON applies at
+      <em>every</em> nesting level — so the payload hashed as empty and editing a past amount was
+      undetectable. Tamper-evidence that does not cover the payload is decoration. Caught by a
+      tamper test, fixed, and the fix is pinned.</p></div></div>
+
+    <div class="item"><div class="k">Simulator</div><div>
+      <h3>A sweep that looked exhaustive and wasn’t</h3>
+      <p>Seeding the generator directly left adjacent seeds correlated — seeds 1, 2 and 3 opened
+      within 0.002 of each other. A sweep over seeds 1..N would have explored a sliver of the space
+      while appearing thorough. That is the worst class of testing bug, because it inflates
+      confidence rather than failing. The state is avalanched now, with a test pinning
+      decorrelation.</p></div></div>
+  </div>
+
+  <div class="note"><p>Both are listed because a testing page that only reports passes is a
+  marketing page. The reason to trust the numbers above is that the same process caught these.</p></div>
+</div></section>
+
+<hr />
+
+<section><div class="wrap">
+  <h2>Honest limits</h2>
+  <p>TigerBeetle runs two millennia of simulated time per day on a thousand cores. This runs 248
+  years in 3.6 seconds on one. <strong>Same method, not the same coverage</strong>, and it would be
+  dishonest to imply otherwise.</p>
+  <p>Not yet covered: concurrency against a durable store, which does not exist yet; fault injection
+  between reserving and committing; chain verification under concurrent append. Named rather than
+  glossed, and tracked in the <a href="https://github.com/Aditya-galaxy/kronagent-pay">repository</a>.</p>
+</div></section>
+
+<hr />
+
+<section><div class="wrap">
+  <div class="next">
+    <a href="/architecture.html">← Where the decision lives</a>
+    <a href="/#claim">Claim priority — $5 →</a>
+  </div>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/">Home</a> · <a href="/architecture.html">Architecture</a> ·
+  <a href="/security.html">Security</a> ·
+  <a href="https://github.com/Aditya-galaxy/kronagent-pay">Source</a>
+</div></footer>
+
+</main>
+</body>
+</html>

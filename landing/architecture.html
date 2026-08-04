@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Architecture — Kronagent</title>
+<meta name="description" content="How the spend gate works: where the decision lives, why pricing precedes authorizing, and what would break at scale." />
+<meta property="og:title" content="Kronagent — architecture" />
+<meta property="og:description" content="Where the decision lives, why pricing precedes authorizing, and an honest account of what breaks at scale." />
+<meta name="theme-color" content="#000000" />
+<link rel="canonical" href="https://kronagent.dev/architecture.html" />
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+
+<nav><div class="wrap">
+  <a class="brand" href="/">Kronagent</a>
+  <a class="l" href="/architecture.html" aria-current="page">Architecture</a>
+  <a class="l" href="/security.html">Security</a>
+  <a class="l opt" href="/testing.html">Testing</a>
+  <a class="l" href="/#claim">Claim priority →</a>
+</div></nav>
+
+<main>
+
+<section class="hero"><div class="wrap">
+  <span class="eyebrow">Architecture</span>
+  <h1>Where the decision lives</h1>
+  <p class="lede">One idea does all the work: the component that decides whether money moves must
+  never read anything an attacker can write.</p>
+</div></section>
+
+<hr />
+
+<section><div class="wrap">
+  <h2>The path a payment takes</h2>
+  <div class="term"><span class="c-dim"> the model — untrusted, reads attacker-controlled text</span>
+        <span class="c-dim">│</span>
+        <span class="c-dim">│  "pay https://vendor.example"</span>
+        <span class="c-dim">▼</span>
+ <span class="c-acc">one function</span>  <span class="c-dim">← the only seam your runtime needs</span>
+        <span class="c-dim">│</span>
+        <span class="c-dim">▼</span>
+ <span class="c-acc">price it</span>      <span class="c-dim">← we resolve the price. never the model's number.</span>
+        <span class="c-dim">│</span>
+        <span class="c-dim">▼</span>
+ <span class="c-acc">decide</span>        <span class="c-dim">← deterministic. no LLM. no network. no config.</span>
+        <span class="c-dim">│</span>
+        <span class="c-ok">├── pay</span>        <span class="c-dim">within permission, within budget</span>
+        <span class="c-warn">├── hold</span>       <span class="c-dim">a human decides</span>
+        <span class="c-bad">└── block</span>      <span class="c-dim">kill switch, or a limit nothing can raise</span>
+        <span class="c-dim">│</span>
+        <span class="c-dim">▼</span>
+ <span class="c-acc">record</span>        <span class="c-dim">hash-chained. refusals included.</span></div>
+
+  <div class="note"><p>An agent that can be talked into <em>proposing</em> a payment is expected and
+  survivable. An engine that can be talked into <em>approving</em> one is not. Everything below
+  follows from that.</p></div>
+</div></section>
+
+<hr />
+
+<section><div class="wrap">
+  <h2>Design decisions</h2>
+
+  <div class="list">
+    <div class="item"><div class="k">Determinism</div><div>
+      <h3>No model in the decision path</h3>
+      <p>The engine is a few hundred lines with no dependencies, no network calls, and no
+      configurable strictness. It cannot be influenced by a web page the agent read, by a vendor’s
+      response body, or by anything else an attacker controls.</p>
+      <p>It is small because it is the part that has to be audited, and every line in it is a line
+      someone must be willing to defend after a payment goes wrong.</p></div></div>
+
+    <div class="item"><div class="k">Ordering</div><div>
+      <h3>Pricing precedes authorizing</h3>
+      <p>An x402 purchase names a URL, not an amount — the price comes from the vendor’s own
+      response. So the gate resolves the price itself rather than trusting a number the agent
+      supplied, because the agent read the listing and the listing is attacker-influenced.</p>
+      <p>If pricing fails, the payment is held. <em>“The price lookup failed so we paid anyway”</em>
+      is not a sentence anyone wants in an incident review.</p></div></div>
+
+    <div class="item"><div class="k">Fail closed</div><div>
+      <h3>Every unknown resolves to not paying</h3>
+      <p>Unknown vendor, unreadable permission, unparseable amount, missing budget, mainnet without
+      an explicit opt-in — all converge on hold or block. A wrongly-held payment costs someone’s
+      attention. A wrongly-sent one is irreversible.</p></div></div>
+
+    <div class="item"><div class="k">Delegation</div><div>
+      <h3>Permission is granted, not configured</h3>
+      <p>A permission names a vendor, a per-payment cap, an accountable owner, an end date, and the
+      reason it was granted. The reason matters: six months on, that sentence is the only thing that
+      can answer whether it should still exist.</p>
+      <p>The person who granted it and the person accountable for it are stored separately. The
+      first is a decision made on a date that nothing later changes; the second is who you ask at
+      renewal. People change teams. The decision they made in March does not.</p></div></div>
+
+    <div class="item"><div class="k">Depth</div><div>
+      <h3>Two systems must agree</h3>
+      <p>The authorized amount is passed down to the payment client as a hard maximum, so the layer
+      below independently refuses to exceed it. Two different systems have to agree before money
+      moves, and the second one isn’t ours.</p></div></div>
+
+    <div class="item"><div class="k">Evidence</div><div>
+      <h3>Refusals are the interesting record</h3>
+      <p>Each entry carries the hash of the one before it, so altering any past entry breaks
+      verification of every entry after it. A log of what an agent paid tells you what happened; a
+      log of what it was stopped from paying is what shows the controls working.</p>
+      <p>Append-only and hash-chained is not the same as immutable — someone with write access can
+      still truncate a file. It is <em>tamper-evident</em>, which is the honest claim.</p></div></div>
+  </div>
+</div></section>
+
+<hr />
+
+<section><div class="wrap">
+  <h2>What breaks at scale</h2>
+  <p>The current engine is single-process and in-memory. Every guarantee holds inside one process,
+  which is enough for a single agent runtime and is not enough for production. Stated plainly
+  because a design document that only describes what works is marketing.</p>
+
+  <table>
+    <tr><th>Gap</th><th>Consequence</th></tr>
+    <tr><td class="mono">state in memory</td><td>N instances means N times the budget, silently</td></tr>
+    <tr><td class="mono">single-writer chain</td><td>concurrent appends fork the record</td></tr>
+    <tr><td class="mono">no idempotency key</td><td>a retried request consumes budget twice</td></tr>
+    <tr><td class="mono">deduct, not reserve</td><td>a payment that fails after authorizing starves the agent</td></tr>
+  </table>
+
+  <p>JavaScript’s single-threaded execution is doing real work here — the read and the write have no
+  await between them, so no two concurrent calls can both see the pre-spend total. That is a genuine
+  guarantee, and it evaporates with a second process.</p>
+
+  <h3 style="margin-top:28px">The production design</h3>
+  <p>Per-agent transactional serialization rather than a global lock. <strong>Reservation with
+  expiry</strong> rather than deduction, so a process that dies mid-payment does not strand budget
+  forever. Idempotency keys on insert. Per-agent chains, to keep the single-writer assumption true
+  rather than working around it. Balances derived by summing an append-only history, never by
+  mutating a row.</p>
+
+  <div class="note"><p>The failure posture people argue with: <strong>if the ledger write fails, the
+  payment is refused.</strong> A payment we cannot record is a payment we do not make — because the
+  audit trail is the product.</p></div>
+</div></section>
+
+<hr />
+
+<section><div class="wrap">
+  <div class="next">
+    <a href="/security.html">← The threat model and the invariants</a>
+    <a href="/testing.html">How it is tested →</a>
+  </div>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/">Home</a> · <a href="/security.html">Security</a> ·
+  <a href="/testing.html">Testing</a> ·
+  <a href="https://github.com/Aditya-galaxy/kronagent-pay">Source</a>
+</div></footer>
+
+</main>
+</body>
+</html>
