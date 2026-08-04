@@ -11,5 +11,8 @@
   "devDependencies": {
     "@types/bun": "latest",
     "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "@google/genai": "^2.15.0"
   }
 }
