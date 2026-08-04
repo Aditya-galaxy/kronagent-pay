@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Security — Kronagent</title>
+<meta name="description" content="The threat model: what is trusted, what is not, the attacks in scope, the ten invariants, and what this deliberately does not defend against." />
+<meta property="og:title" content="Kronagent — threat model" />
+<meta property="og:description" content="The agent is not trusted. That is the founding assumption, and everything else follows from it." />
+<meta name="theme-color" content="#000000" />
+<link rel="canonical" href="https://kronagent.dev/security.html" />
+<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+
+<nav><div class="wrap">
+  <a class="brand" href="/">Kronagent</a>
+  <a class="l" href="/architecture.html">Architecture</a>
+  <a class="l" href="/security.html" aria-current="page">Security</a>
+  <a class="l opt" href="/testing.html">Testing</a>
+  <a class="l" href="/#claim">Claim priority →</a>
+</div></nav>
+
+<main>
+
+<section class="hero"><div class="wrap">
+  <span class="eyebrow">Threat model</span>
+  <h1>The agent is not trusted</h1>
+  <p class="lede">That is the founding assumption. A sufficiently well-crafted vendor listing will
+  convince a model to propose paying an attacker, and no amount of prompt engineering makes that
+  reliably false.</p>
+</div></section>
+
+<hr />
+
+<section><div class="wrap">
+  <h2>Who is trusted with what</h2>
+  <table>
+    <tr><th>Actor</th><th>Trusted</th><th>Why</th></tr>
+    <tr><td class="mono">the operator</td><td>Yes</td><td>Authenticated human; their intent <em>is</em> the policy</td></tr>
+    <tr><td class="mono">the policy engine</td><td>Yes</td><td>Deterministic; reads nothing an attacker can write</td></tr>
+    <tr><td class="mono">the model</td><td><strong>No</strong></td><td>Reads attacker-influenced text; can be induced to propose anything</td></tr>
+    <tr><td class="mono">vendor listings</td><td><strong>No</strong></td><td>Marketing copy written by counterparties</td></tr>
+    <tr><td class="mono">the payment client</td><td>Partly</td><td>Trusted to execute correctly; never as the only control</td></tr>
+  </table>
+
+  <div class="note"><p>Treating <em>“the model won’t fall for it”</em> as a control is the mistake
+  this system exists to avoid. The same conclusion, reached independently from the data side:
+  <a href="https://www.shreyashsharma.com/writing/stop-trusting-the-llm-authorization-aware-rag">
+  “behavioral instructions to models cannot substitute for deterministic authorization, because
+  LLMs are probabilistic, not security mechanisms.”</a></p></div>
+</div></section>
+
+<hr />
+
+<section><div class="wrap">
+  <h2>Attacks in scope</h2>
+  <div class="list">
+    <div class="item"><div class="k">Injection</div><div>
+      <h3>Payment redirection</h3>
+      <p>A listing instructs the agent to pay an attacker’s address. The agent proposes it — models
+      do. The engine has no permission for that counterparty, so nothing moves, and the injected
+      text is written to the record verbatim as evidence rather than discarded.</p></div></div>
+
+    <div class="item"><div class="k">Price</div><div>
+      <h3>An honest vendor, a dishonest quote</h3>
+      <p>A permitted vendor quotes $500 for a one-cent endpoint, or an injected instruction inflates
+      the amount. Trusting a counterparty is not the same as accepting any price from it, so the
+      per-payment ceiling binds independently of who is being paid.</p></div></div>
+
+    <div class="item"><div class="k">Attrition</div><div>
+      <h3>Drain by a thousand small charges</h3>
+      <p>Every payment individually legal, under the cap, unremarkable. This is what a runaway
+      actually looks like, and per-payment caps do nothing against it. The rolling window budget is
+      the control that binds.</p></div></div>
+
+    <div class="item"><div class="k">Sprawl</div><div>
+      <h3>Authority nobody revokes</h3>
+      <p>Permissions accumulate, the blast radius grows quietly over months, and adding one more is
+      always cheaper than auditing the last twelve. Every permission expires. Inattention withdraws
+      authority instead of extending it.</p></div></div>
+
+    <div class="item"><div class="k">Replay</div><div>
+      <h3>Paying twice</h3>
+      <p>A retried request that spends again. Handled by idempotency on the reservation — see the
+      <a href="/architecture.html">architecture</a> for where this is complete and where it is not
+      yet.</p></div></div>
+  </div>
+</div></section>
+
+<hr />
+
+<section><div class="wrap">
+  <h2>The ten invariants</h2>
+  <p>These are the promises. Each is enforced in code and checked against generated inputs rather
+  than chosen examples — see <a href="/testing.html">testing</a>.</p>
+  <table>
+    <tr><th>#</th><th>Invariant</th></tr>
+    <tr><td class="mono">I1</td><td>Nothing above the absolute per-payment ceiling is ever authorized — no permission can raise it</td></tr>
+    <tr><td class="mono">I2</td><td>Nothing is paid to a counterparty without live permission</td></tr>
+    <tr><td class="mono">I3</td><td>No mainnet payment without an explicit, separate opt-in</td></tr>
+    <tr><td class="mono">I4</td><td>The kill switch admits no exceptions</td></tr>
+    <tr><td class="mono">I5</td><td>An expired permission authorizes nothing, at any time after expiry</td></tr>
+    <tr><td class="mono">I6</td><td>Total authorized spend in a window never exceeds the window cap</td></tr>
+    <tr><td class="mono">I7</td><td>The decision function is total — it never throws, for any input</td></tr>
+    <tr><td class="mono">I8</td><td>It is deterministic — same inputs, same verdict</td></tr>
+    <tr><td class="mono">I9</td><td>Policy is monotonic — tightening a limit never authorizes what the looser limit refused</td></tr>
+    <tr><td class="mono">I10</td><td>Every decision names the control that produced it</td></tr>
+  </table>
+
+  <div class="note"><p><strong>I7 is a safety property, not a robustness nicety.</strong> An engine
+  that can throw is an engine that can be made to fail <em>open</em> by whoever catches the
+  exception.</p></div>
+
+  <p><strong>I9 is about operability.</strong> Policy where tightening a cap might authorize
+  something the looser cap refused is unreasonable to run — an operator would have no way to reason
+  about what they just changed.</p>
+</div></section>
+
+<hr />
+
+<section class="not"><div class="wrap">
+  <h2>Out of scope, explicitly</h2>
+  <ul>
+    <li><strong>Compromise of your provider credentials.</strong> If someone has your API keys they
+    do not need your agent.</li>
+    <li><strong>Compromise of the host.</strong> Write access to the machine means write access to
+    the record. The chain makes tampering <em>detectable</em>, not impossible.</li>
+    <li><strong>Malicious code in our own dependencies.</strong> The engine has none, which narrows
+    this — it does not eliminate it.</li>
+    <li><strong>Whether the spend was <em>wise</em>.</strong> We enforce the limits you set. We have
+    no opinion on whether buying that data was a good idea.</li>
+  </ul>
+</div></section>
+
+<hr />
+
+<section><div class="wrap">
+  <div class="next">
+    <a href="/architecture.html">← Where the decision lives</a>
+    <a href="/testing.html">How the invariants are proven →</a>
+  </div>
+</div></section>
+
+<footer><div class="wrap">
+  <a href="/">Home</a> · <a href="/architecture.html">Architecture</a> ·
+  <a href="/testing.html">Testing</a> ·
+  <a href="https://github.com/Aditya-galaxy/kronagent-pay">Source</a>
+</div></footer>
+
+</main>
+</body>
+</html>

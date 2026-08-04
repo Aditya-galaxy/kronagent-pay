@@ -1,0 +1,115 @@
+/* ============================================================
+   Kronagent — spend limits for agents.
+
+   Restrained on purpose. No gradients, no glows, no motion. A
+   product whose job is to refuse payments should look like it
+   means it; ornament reads as a product with something to prove.
+
+   Hairlines, whitespace, one accent, and monospace for anything
+   that is a number — because on this site the numbers are the
+   argument.
+   ============================================================ */
+
+:root{
+  --bg:#000; --surface:#0A0A0A; --line:#1A1A1A; --line-hi:#262626;
+  --text:#EDEDED; --text-2:#A1A1A1; --muted:#6E6E6E;
+  --accent:#67E8F9;
+  --ok:#4ADE9B; --warn:#F0B849; --bad:#FB7185;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,"JetBrains Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --wrap:760px;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);
+     font-size:16px;line-height:1.7;-webkit-font-smoothing:antialiased}
+.wrap{width:100%;max-width:var(--wrap);margin-inline:auto;padding-inline:24px}
+
+/* ── nav ── */
+nav{border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20;
+    background:rgba(0,0,0,.82);backdrop-filter:blur(10px)}
+nav .wrap{display:flex;align-items:center;gap:24px;height:58px}
+.brand{font-weight:600;font-size:15px;letter-spacing:-.01em;color:var(--text);
+       text-decoration:none;margin-right:auto}
+nav a.l{font-size:13.5px;color:var(--muted);text-decoration:none}
+nav a.l:hover,nav a.l[aria-current="page"]{color:var(--text)}
+@media(max-width:620px){nav a.l.opt{display:none}}
+
+/* ── type ── */
+h1,h2,h3{margin:0;font-weight:600;letter-spacing:-.03em;line-height:1.15}
+h1{font-size:clamp(30px,5.2vw,42px);margin-bottom:20px}
+h2{font-size:21px;letter-spacing:-.02em;margin:0 0 12px}
+h3{font-size:15px;margin-bottom:6px;letter-spacing:-.01em}
+p{margin:0 0 18px;color:var(--text-2)}
+.lede{font-size:18px;color:var(--text-2)}
+.eyebrow{font-family:var(--mono);font-size:11.5px;color:var(--muted);
+         letter-spacing:.09em;text-transform:uppercase;margin-bottom:14px;display:block}
+strong{color:var(--text);font-weight:550}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+section{padding:60px 0}
+.hero{padding:76px 0 56px}
+hr{height:1px;background:var(--line);border:0;margin:0}
+
+/* ── numbers carry the argument ── */
+.num{font-family:var(--mono);font-size:clamp(32px,6vw,42px);font-weight:500;
+     letter-spacing:-.04em;color:var(--text);line-height:1;display:block;margin-bottom:10px}
+.num-cap{font-family:var(--mono);font-size:11.5px;color:var(--muted);letter-spacing:.03em}
+
+/* ── buttons ── */
+.btn{display:inline-block;background:var(--text);color:#000;text-decoration:none;
+     font-size:14.5px;font-weight:550;padding:11px 20px;border-radius:7px;border:0;cursor:pointer}
+.btn:hover{background:#fff;text-decoration:none}
+.btn.ghost{background:transparent;color:var(--text-2);border:1px solid var(--line-hi)}
+.btn.ghost:hover{color:var(--text);border-color:var(--muted);background:transparent}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:26px 0 12px}
+.fine{font-family:var(--mono);font-size:12px;color:var(--muted);margin:0}
+
+/* ── terminal ── */
+.term{border:1px solid var(--line);border-radius:8px;background:var(--surface);
+      font-family:var(--mono);font-size:12.5px;line-height:2;padding:18px 20px;
+      overflow-x:auto;white-space:pre;margin:24px 0;color:var(--text-2)}
+.c-dim{color:#5A5A5A}.c-ok{color:var(--ok)}.c-warn{color:var(--warn)}.c-bad{color:var(--bad)}
+.c-acc{color:var(--accent)}
+
+/* ── definition list rows ── */
+.list{border-top:1px solid var(--line);margin-top:30px}
+.item{border-bottom:1px solid var(--line);padding:22px 0;display:grid;
+      grid-template-columns:140px 1fr;gap:22px}
+@media(max-width:620px){.item{grid-template-columns:1fr;gap:6px}}
+.item .k{font-family:var(--mono);font-size:11.5px;color:var(--muted);
+         letter-spacing:.08em;text-transform:uppercase;padding-top:3px}
+.item p{margin:0;font-size:15px}
+.item p+p{margin-top:10px}
+
+/* ── tables ── */
+table{width:100%;border-collapse:collapse;margin:22px 0;font-size:14.5px}
+th{text-align:left;font-weight:500;color:var(--muted);font-family:var(--mono);
+   font-size:11.5px;letter-spacing:.07em;text-transform:uppercase;
+   padding:0 12px 10px 0;border-bottom:1px solid var(--line)}
+td{padding:11px 12px 11px 0;border-bottom:1px solid var(--line);color:var(--text-2);
+   vertical-align:top}
+td.mono{font-family:var(--mono);font-size:13px;color:var(--text)}
+
+/* ── purchase ── */
+.buy{border:1px solid var(--line-hi);border-radius:10px;padding:28px;background:var(--surface)}
+.buy .amt{font-family:var(--mono);font-size:38px;font-weight:500;letter-spacing:-.04em;line-height:1}
+.buy .amt small{font-size:14px;color:var(--muted);font-weight:400;letter-spacing:0}
+.buy ul{list-style:none;padding:0;margin:20px 0 22px}
+.buy li{color:var(--text-2);font-size:14.5px;margin-bottom:9px;padding-left:18px;position:relative}
+.buy li::before{content:"\2014";position:absolute;left:0;color:var(--muted)}
+
+/* ── callout ── */
+.note{border-left:2px solid var(--line-hi);padding:2px 0 2px 18px;margin:22px 0}
+.note p{margin:0;font-size:15px;color:var(--muted)}
+.not ul{padding-left:18px;margin:0}
+.not li{color:var(--muted);font-size:14.5px;margin-bottom:10px}
+
+/* ── next-page link ── */
+.next{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;
+      border-top:1px solid var(--line);padding-top:26px;margin-top:8px}
+.next a{font-size:14.5px}
+
+footer{border-top:1px solid var(--line);padding:28px 0 60px;color:var(--muted);font-size:13.5px}
+footer a{color:var(--muted);text-decoration:underline}
+footer a:hover{color:var(--text)}

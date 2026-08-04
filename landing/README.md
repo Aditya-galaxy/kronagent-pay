@@ -1,20 +1,31 @@
-# Landing page
+# kronagent.dev
 
-Static, single file, zero external requests. Deploy anywhere.
+Four static pages, one stylesheet, zero external requests — no fonts, no
+analytics, no CDN. Nothing we do not control can slow it down or block it.
+
+    /                  the pitch, the incident, the $5 claim
+    /architecture      where the decision lives, and what breaks at scale
+    /security          threat model, attacks in scope, the ten invariants
+    /testing           property tests, deterministic simulation, defects found
 
 ## Before it goes live
 
-1. **Create a Stripe Payment Link** — Stripe dashboard → Payment Links → new,
-   one-time, $1. Copy the URL.
-2. Replace `STRIPE_PAYMENT_LINK_HERE` in `index.html` with it. Checkout is
-   hosted by Stripe; no card details ever touch this page and none are stored.
-3. Deploy, then point kronagent.dev at it.
+1. **Create a Polar product** — one-time, $5. Polar is a merchant of record:
+   they are the legal seller, handle global tax, and pay out. This matters
+   because Stripe India is invite-only and restricted to registered
+   businesses; individuals cannot accept international payments at all.
+2. Replace `POLAR_CHECKOUT_LINK_HERE` in `index.html` with the checkout URL.
+3. Deploy, point kronagent.dev at it, **then click the button yourself before
+   posting anywhere.** A dead checkout on the one post that gets traction is
+   not recoverable.
 
 ## Deploy
 
 ```bash
-npx vercel --prod            # or: firebase deploy --only hosting
+npx vercel --prod
 ```
 
 Then in Spaceship DNS for kronagent.dev: delete the URL-forwarding record that
-currently 301s to kronagent.com, and add the record the host gives you.
+currently 301s to kronagent.com, and add the records Vercel gives you. `.dev`
+is on the HSTS preload list, so there is no http fallback — wait for the
+certificate to issue before sharing the link.
