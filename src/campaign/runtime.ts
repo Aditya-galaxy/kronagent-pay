@@ -29,6 +29,7 @@ import {
   type BlobStore,
 } from './persistence';
 import { CampaignStore } from './store';
+import { CircleCliExecutor } from './executor';
 import { DryRunExecutor, runTick, type PayoutExecutor, type TickResult, type ViewOracle } from './tick';
 
 /** No oracle configured yet: report "cannot tell", never a fabricated count. */
@@ -81,7 +82,17 @@ export class CampaignRuntime {
     this.env = options.env ?? Bun.env;
     this.blobs = options.blobs ?? chooseBlobStore(this.env);
     this.oracle = options.oracle ?? NULL_ORACLE;
-    this.executor = options.executor ?? new DryRunExecutor();
+    // With a wallet configured, settlement goes through the real CLI — in
+    // estimate mode unless mainnet is explicitly armed, so the path is
+    // exercised end to end before it can move anything.
+    this.executor =
+      options.executor ??
+      (this.env.CAMPAIGN_WALLET
+        ? new CircleCliExecutor({
+            fromAddress: this.env.CAMPAIGN_WALLET,
+            dryRun: this.env.ALLOW_MAINNET !== 'true',
+          })
+        : new DryRunExecutor());
     this.mandates = options.mandates ?? new MandateStore();
 
     this.gate = new PayoutGate(
