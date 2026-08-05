@@ -30,6 +30,16 @@ import { runJob } from './business/loop';
 import { MARKETPLACE } from './business/tools';
 import { Decimal, USDC } from './decimal';
 import { encodePayment, paymentRequiredBody, verifyPayment } from './x402';
+import { CampaignRuntime } from './campaign/runtime';
+
+/**
+ * The campaign payout agent, kept separate from the demo world above.
+ *
+ * Its state has to outlive the process — the dwell mechanic compares today's
+ * view count against one from at least a day ago — so unlike the scenarios,
+ * this is not reset by `/api/reset`.
+ */
+const campaigns = new CampaignRuntime();
 
 /** What a customer pays for one answered question. Inputs come out of this. */
 const JOB_PRICE_USDC = USDC('1.00');
@@ -121,6 +131,17 @@ const server = Bun.serve({
     if (url.pathname === '/healthz') return new Response('ok');
 
     if (url.pathname === '/api/state') return json(state());
+
+    // What a creator reads before deciding whether the campaign is worth their
+    // effort: the remaining pool, published rather than discoverable only by
+    // submitting and being told the pot ran dry.
+    if (url.pathname === '/api/campaign') return json(await campaigns.publicView());
+
+    // Driven by Cloud Scheduler, not by an in-process timer: each pass arrives
+    // as a request, so Cloud Logging records every agent run for free.
+    if (url.pathname === '/api/tick' && request.method === 'POST') {
+      return campaigns.handleTick(request);
+    }
 
     // The auditor's export: the whole chain, envelopes included, so anyone can
     // recompute the hashes themselves rather than take our word for it.
