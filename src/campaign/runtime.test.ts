@@ -12,6 +12,7 @@ import { Decimal } from '../decimal';
 import { issueMandate } from '../mandates';
 import { MemoryBlobStore } from './persistence';
 import { CampaignRuntime, chooseBlobStore } from './runtime';
+import { termsFor } from './terms';
 import { DryRunExecutor } from './tick';
 import type { Campaign } from './types';
 
@@ -25,6 +26,7 @@ const campaign: Campaign = {
   rateBand: { minUsdc: new Decimal('0.5'), maxUsdc: new Decimal('2') },
   perCreatorCapUsdc: new Decimal('50'),
   dwellMs: 86_400_000,
+  settlementWindowMs: 14 * 86_400_000,
   platforms: ['youtube'],
   chain: 'base-sepolia',
   status: 'active',
@@ -48,6 +50,7 @@ function runtime(env: Record<string, string | undefined> = {}) {
     postId: 'p',
     url: 'https://youtube.com/shorts/p',
     submittedAt: '2026-08-02T00:00:00.000Z',
+    acceptedTerms: termsFor(campaign, new Date('2026-08-02T00:00:00.000Z')),
   });
   rt.store.addVerdict({
     verdictId: 'v-1',

@@ -23,6 +23,7 @@ const campaign = (over: Partial<Campaign> = {}): Campaign => ({
   rateBand: { minUsdc: new Decimal('0.5'), maxUsdc: new Decimal('2') },
   perCreatorCapUsdc: new Decimal('10'),
   dwellMs: 86_400_000,
+  settlementWindowMs: 14 * 86_400_000,
   platforms: ['youtube'],
   chain: 'base-sepolia',
   status: 'active',

@@ -54,7 +54,17 @@ export function encodeState(state: State): string {
         },
       })),
       creators: state.creators,
-      submissions: state.submissions,
+      // Terms carry Decimals, and they are the creator's side of the deal —
+      // losing them on a restart would silently hand the brand back the
+      // discretion this removed.
+      submissions: state.submissions.map((sub) => ({
+        ...sub,
+        acceptedTerms: {
+          ...sub.acceptedTerms,
+          cpmUsdc: sub.acceptedTerms.cpmUsdc.toString(),
+          perCreatorCapUsdc: sub.acceptedTerms.perCreatorCapUsdc.toString(),
+        },
+      })),
       verdicts: state.verdicts,
       snapshots: state.snapshots.map((s) => ({ ...s, views: s.views.toString() })),
       payouts: state.payouts.map((p) => ({
@@ -95,7 +105,17 @@ export function decodeState(raw: string): State {
       };
     }),
     creators: rows<Creator>('creators'),
-    submissions: rows<Submission>('submissions'),
+    submissions: rows<Record<string, unknown>>('submissions').map((sub) => {
+      const t = (sub.acceptedTerms ?? {}) as Record<string, unknown>;
+      return {
+        ...(sub as unknown as Submission),
+        acceptedTerms: {
+          ...(t as unknown as Submission['acceptedTerms']),
+          cpmUsdc: new Decimal(String(t.cpmUsdc)),
+          perCreatorCapUsdc: new Decimal(String(t.perCreatorCapUsdc)),
+        },
+      };
+    }),
     verdicts: rows<Verdict>('verdicts'),
     snapshots: rows<Record<string, unknown>>('snapshots').map((s) => ({
       ...(s as unknown as Snapshot),

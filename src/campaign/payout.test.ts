@@ -16,6 +16,7 @@ import { MandateStore, issueMandate } from '../mandates';
 import { PaymentPolicyEngine } from '../policy';
 import { CampaignStore } from './store';
 import { PayoutGate } from './payout';
+import { termsFor } from './terms';
 import type { Campaign, Creator, Snapshot, Submission, Verdict } from './types';
 
 const DWELL = 86_400_000;
@@ -32,6 +33,7 @@ const campaign = (over: Partial<Campaign> = {}): Campaign => ({
   rateBand: { minUsdc: new Decimal('0.5'), maxUsdc: new Decimal('2') },
   perCreatorCapUsdc: new Decimal('3'),
   dwellMs: DWELL,
+  settlementWindowMs: 14 * 86_400_000,
   platforms: ['youtube'],
   chain: 'base-sepolia',
   status: 'active',
@@ -46,15 +48,18 @@ const CREATOR: Creator = {
   handles: { youtube: '@clipper' },
 };
 
-const SUBMISSION: Submission = {
+const ACCEPTED_AT = new Date('2026-08-03T00:00:00.000Z');
+
+const submissionFor = (c: Campaign): Submission => ({
   submissionId: 'sub-1',
   campaignId: 'camp-1',
   creatorId: 'cre-1',
   platform: 'youtube',
   postId: 'yt-abc',
   url: 'https://youtube.com/shorts/abc',
-  submittedAt: '2026-08-03T00:00:00.000Z',
-};
+  submittedAt: ACCEPTED_AT.toISOString(),
+  acceptedTerms: termsFor(c, ACCEPTED_AT),
+});
 
 const verdict = (pass: boolean): Verdict => ({
   verdictId: `v-${pass}`,
@@ -77,10 +82,11 @@ let store: CampaignStore;
 let gate: PayoutGate;
 
 function build(over: Partial<Campaign> = {}) {
+  const c = campaign(over);
   store = new CampaignStore();
-  store.putCampaign(campaign(over));
+  store.putCampaign(c);
   store.putCreator(CREATOR);
-  store.putSubmission(SUBMISSION);
+  store.putSubmission(submissionFor(c));
 
   const mandates = new MandateStore([
     issueMandate({
@@ -115,14 +121,44 @@ describe('preconditions, before money is ever considered', () => {
     expect(d.control).toBe('unknown_entity');
   });
 
-  test('a paused campaign pays nothing', () => {
+  test('a paused campaign still settles work it already accepted', () => {
+    // The asymmetry this closes. Every other control protects the brand from
+    // the agent; this is the one that protects the creator from the brand.
+    // Pausing refuses *new* clips at acceptance — it does not abandon work
+    // already taken, which is precisely the documented complaint.
     build({ status: 'paused' });
-    expect(decide().control).toBe('campaign_inactive');
+    store.addVerdict(verdict(true));
+    store.addSnapshot(snap(AGED, 2_000n));
+    const d = decide();
+    expect(d.disposition).toBe('auto_pay');
+    expect(d.amountUsdc.toString()).toBe('2');
   });
 
-  test('views earned outside the funded dates are not payable', () => {
+  test('a campaign that has ended still settles work it already accepted', () => {
     build({ endsAt: '2026-08-04T00:00:00.000Z' });
-    expect(decide().control).toBe('campaign_window');
+    store.addVerdict(verdict(true));
+    store.addSnapshot(snap(AGED, 2_000n));
+    expect(decide().disposition).toBe('auto_pay');
+  });
+
+  test('a rate cut after acceptance does not reprice agreed work', () => {
+    // The clip was accepted at 1 USDC/1k. The brand dropping to 0.5 afterwards
+    // applies to new clips, not this one.
+    build();
+    store.campaign('camp-1')!.cpmUsdc = new Decimal('0.5');
+    store.addVerdict(verdict(true));
+    store.addSnapshot(snap(AGED, 2_000n));
+    expect(decide().amountUsdc.toString()).toBe('2');
+  });
+
+  test('but the brand stops being bound once the settlement window closes', () => {
+    build();
+    store.addVerdict(verdict(true));
+    store.addSnapshot(snap(AGED, 2_000n));
+    const late = new Date('2026-09-01T00:00:00.000Z'); // 14d window expired
+    const d = gate.decide('sub-1', { agentId: 'agent-1', now: late });
+    expect(d.disposition).toBe('blocked');
+    expect(d.control).toBe('terms_expired');
   });
 
   test('an unchecked clip is never paid', () => {
@@ -202,6 +238,7 @@ describe('the money ladder', () => {
   });
 
   test('one creator cannot take the whole campaign', () => {
+    // Accepted under a 1 USDC cap, so that is the cap that binds.
     build({ perCreatorCapUsdc: new Decimal('1') });
     store.addVerdict(verdict(true));
     store.addSnapshot(snap(AGED, 2_000n));

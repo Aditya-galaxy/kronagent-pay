@@ -37,6 +37,14 @@ export interface Campaign {
   readonly perCreatorCapUsdc: Decimal;
   /** How long a view must persist before it is payable. 24h default. */
   readonly dwellMs: number;
+  /**
+   * How long after accepting a clip the brand stays bound to settle it.
+   *
+   * The window has to outlast `dwellMs` by a wide margin or the guarantee is
+   * theatre: a creator whose views are still settling when the campaign ends
+   * is exactly the person this protects.
+   */
+  readonly settlementWindowMs: number;
   readonly platforms: readonly Platform[];
   readonly chain: Chain;
   status: CampaignStatus;
@@ -51,6 +59,35 @@ export interface Creator {
   readonly handles: Readonly<Partial<Record<Platform, string>>>;
 }
 
+/**
+ * The deal, frozen at the moment a clip was accepted.
+ *
+ * Everything else in this system protects the brand from the agent — pool
+ * caps, rate bands, mandates, the kill switch. This is the only thing that
+ * protects the creator from the brand, and it exists because without it the
+ * system reproduces the exact complaint it was built to answer: *"joining a
+ * hot campaign, generating genuine views, and never being paid."*
+ *
+ * A live campaign is a policy: one party sets it, one party is bound by it. A
+ * brand could halve the CPM, lengthen the dwell, or pause outright while a
+ * creator's clip was still settling, and the creator would have no recourse
+ * for work already done in good faith. Copying the terms onto the submission
+ * makes it an *agreement* — the clip settles under the deal it was accepted
+ * under, whatever the campaign does afterwards.
+ *
+ * What this cannot do is conjure money. If the pool empties, it empties; that
+ * is disclosed rather than papered over, and it is why the remaining pool is
+ * published before a creator invests any effort.
+ */
+export interface CampaignTerms {
+  readonly cpmUsdc: Decimal;
+  readonly dwellMs: number;
+  readonly perCreatorCapUsdc: Decimal;
+  readonly acceptedAt: string;
+  /** After this, the brand is no longer bound and the clip stops settling. */
+  readonly settlementDeadline: string;
+}
+
 export interface Submission {
   readonly submissionId: string;
   readonly campaignId: string;
@@ -60,6 +97,12 @@ export interface Submission {
   readonly postId: string;
   readonly url: string;
   readonly submittedAt: string;
+  /**
+   * Required, not optional. An optional field here would let a caller forget
+   * it and silently fall back to the live campaign, which is the hole this
+   * closes. Build submissions with `acceptSubmission`.
+   */
+  readonly acceptedTerms: CampaignTerms;
 }
 
 /**

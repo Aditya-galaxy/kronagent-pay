@@ -14,6 +14,7 @@ import { MandateStore, issueMandate } from '../mandates';
 import { PaymentPolicyEngine } from '../policy';
 import { CampaignStore } from './store';
 import { PayoutGate } from './payout';
+import { termsFor } from './terms';
 import { MemoryBlobStore, loadInto } from './persistence';
 import { DryRunExecutor, runTick } from './tick';
 import type { PayoutExecutor, ViewOracle } from './tick';
@@ -30,6 +31,7 @@ const campaign = (over: Partial<Campaign> = {}): Campaign => ({
   rateBand: { minUsdc: new Decimal('0.5'), maxUsdc: new Decimal('2') },
   perCreatorCapUsdc: new Decimal('50'),
   dwellMs: DWELL,
+  settlementWindowMs: 14 * 86_400_000,
   platforms: ['youtube'],
   chain: 'base-sepolia',
   status: 'active',
@@ -38,7 +40,7 @@ const campaign = (over: Partial<Campaign> = {}): Campaign => ({
   ...over,
 });
 
-const submission = (id: string): Submission => ({
+const submission = (id: string, c: Campaign = campaign()): Submission => ({
   submissionId: id,
   campaignId: 'camp-1',
   creatorId: `cre-${id}`,
@@ -46,17 +48,19 @@ const submission = (id: string): Submission => ({
   postId: id,
   url: `https://youtube.com/shorts/${id}`,
   submittedAt: '2026-08-02T00:00:00.000Z',
+  acceptedTerms: termsFor(c, new Date('2026-08-02T00:00:00.000Z')),
 });
 
 /** A store with `ids` submissions, each already verified and dwelled. */
 function world(ids: string[], over: Partial<Campaign> = {}) {
+  const c = campaign(over);
   const store = new CampaignStore();
-  store.putCampaign(campaign(over));
+  store.putCampaign(c);
   const mandates = new MandateStore();
 
   for (const id of ids) {
     store.putCreator({ creatorId: `cre-${id}`, payoutAddress: `0x${id}`, handles: {} });
-    store.putSubmission(submission(id));
+    store.putSubmission(submission(id, c));
     store.addVerdict({
       verdictId: `v-${id}`,
       submissionId: id,
@@ -128,14 +132,25 @@ describe('a normal pass', () => {
     expect(second.decisions[0]?.control).toBe('nothing_payable');
   });
 
-  test('a paused campaign is skipped entirely', async () => {
+  test('a paused campaign still settles the clips it accepted', async () => {
+    // The loop must not filter on `active`, or it would honour the agreed
+    // terms in the gate while never asking the gate.
     const { store, gate } = world(['a'], { status: 'paused' });
     const result = await runTick(
       { store, gate, oracle: oracleReturning(5_000n), executor: new DryRunExecutor() },
       { agentId: 'agent', now: NOW },
     );
+    expect(result.campaigns).toBe(1);
+    expect(result.paid).toBe(1);
+  });
+
+  test('a draft campaign has nothing to settle and is skipped', async () => {
+    const { store, gate } = world(['a'], { status: 'draft' });
+    const result = await runTick(
+      { store, gate, oracle: oracleReturning(5_000n), executor: new DryRunExecutor() },
+      { agentId: 'agent', now: NOW },
+    );
     expect(result.campaigns).toBe(0);
-    expect(result.submissions).toBe(0);
   });
 });
 
