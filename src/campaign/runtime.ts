@@ -29,6 +29,8 @@ import {
   type BlobStore,
 } from './persistence';
 import { CampaignStore } from './store';
+import { MemoryTrackingStore, verifyClip } from './verify';
+import type { ClipVerifier, CountOracle } from './verify';
 import { CircleCliExecutor } from './executor';
 import { DryRunExecutor, runTick, type PayoutExecutor, type TickResult, type ViewOracle } from './tick';
 
@@ -61,6 +63,8 @@ function secretMatches(provided: string | null, expected: string): boolean {
 
 export interface CampaignRuntimeOptions {
   blobs?: BlobStore;
+  counts?: CountOracle;
+  verifier?: ClipVerifier;
   oracle?: ViewOracle;
   executor?: PayoutExecutor;
   mandates?: MandateStore;
@@ -75,6 +79,10 @@ export class CampaignRuntime {
   private readonly oracle: ViewOracle;
   private readonly executor: PayoutExecutor;
   private readonly env: Record<string, string | undefined>;
+  /** History for the public verification service, separate from campaigns. */
+  private readonly tracking = new MemoryTrackingStore();
+  private readonly counts?: CountOracle;
+  private readonly verifier?: ClipVerifier;
   private loaded = false;
   private lastTick?: TickResult;
 
@@ -94,6 +102,8 @@ export class CampaignRuntime {
           })
         : new DryRunExecutor());
     this.mandates = options.mandates ?? new MandateStore();
+    this.counts = options.counts;
+    this.verifier = options.verifier;
 
     this.gate = new PayoutGate(
       this.store,
@@ -168,6 +178,30 @@ export class CampaignRuntime {
         errors: this.lastTick.errors,
       },
     };
+  }
+
+  /**
+   * The service we sell to other agents: does this clip qualify, and how many
+   * of its views survived?
+   *
+   * Payment is checked by the caller (`server.ts`) via x402 before this runs —
+   * the same 402 handshake Circle's marketplace expects, so a buying agent
+   * needs no account with us and no API key.
+   */
+  async handleVerify(request: Request): Promise<Response> {
+    const body = (await request.json().catch(() => ({}))) as {
+      url?: string;
+      brief?: string;
+      dwellHours?: number;
+    };
+    if (!body.url) {
+      return Response.json({ error: 'url is required' }, { status: 400 });
+    }
+    const result = await verifyClip(
+      { url: body.url, brief: body.brief, dwellHours: body.dwellHours },
+      { tracking: this.tracking, oracle: this.counts, verifier: this.verifier },
+    );
+    return Response.json(result);
   }
 
   /** Route handler for `POST /api/tick`. Returns null when the path isn't ours. */

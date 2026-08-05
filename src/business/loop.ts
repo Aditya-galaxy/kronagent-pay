@@ -31,7 +31,7 @@ import { Gemini, LlmAgent, InMemoryRunner } from '@google/adk';
 import { Decimal } from '../decimal';
 import { buildBusinessTools, type ToolContext } from './tools';
 
-const APP_NAME = 'kronagent-pay-research';
+const APP_NAME = 'kronagent-payouts-research';
 const USER_ID = 'customer';
 
 export const DEFAULT_MODEL = process.env['LLM_MODEL'] ?? 'gemini-3-flash-preview';
