@@ -88,6 +88,94 @@ export interface VerifyResponse {
 const DEFAULT_DWELL_HOURS = 24;
 const MAX_DWELL_HOURS = 24 * 7;
 
+/**
+ * What a buying agent gets for free, before deciding whether to pay.
+ *
+ * Deliberately excludes the numbers. It answers *"can you handle this link,
+ * are you already watching it, and when will a real answer exist?"* — which is
+ * everything an agent needs to plan a call, and nothing it could use instead
+ * of making one. Reporting the confirmed count here would give away the thing
+ * being sold.
+ *
+ * Free because it costs us nothing: URL parsing and a local history lookup, no
+ * platform call and no model. The pattern is borrowed from the marketplace's
+ * larger sellers, who list free health and lookup routes so an agent can
+ * discover them and confirm they work before spending.
+ */
+export interface PreviewResponse {
+  /** Whether we can verify this URL at all. */
+  supported: boolean;
+  url: string | null;
+  platform: string | null;
+  /** Whether this post is already under observation from an earlier call. */
+  tracked: boolean;
+  trackingSince: string | null;
+  /** Whether a surviving-view figure exists yet — not the figure itself. */
+  confirmedAvailable: boolean;
+  /** When a surviving figure will first be available, if it is not yet. */
+  readyAt: string | null;
+  dwellHours: number;
+  note: string;
+  errors: string[];
+}
+
+export function previewClip(
+  request: { url: string; dwellHours?: number },
+  deps: { tracking: TrackingStore; now?: () => Date },
+): PreviewResponse {
+  const now = (deps.now ?? (() => new Date()))();
+  const dwellHours = Math.min(
+    Math.max(request.dwellHours ?? DEFAULT_DWELL_HOURS, 0),
+    MAX_DWELL_HOURS,
+  );
+  const dwellMs = dwellHours * 3_600_000;
+
+  const ref = parsePostUrl(request.url ?? '');
+  if (!ref) {
+    return {
+      supported: false,
+      url: null,
+      platform: null,
+      tracked: false,
+      trackingSince: null,
+      confirmedAvailable: false,
+      readyAt: null,
+      dwellHours,
+      note: 'YouTube and X only.',
+      errors: [
+        'unrecognised post URL — Instagram, Facebook and TikTok need platform ' +
+          'app review we do not hold, and accepting those links would promise ' +
+          'a check we cannot perform.',
+      ],
+    };
+  }
+
+  const key = canonicalUrl(ref);
+  const history = deps.tracking.snapshots(key);
+  const earliest = history.reduce<string | null>((acc, s) => {
+    if (!acc) return s.fetchedAt;
+    return Date.parse(s.fetchedAt) < Date.parse(acc) ? s.fetchedAt : acc;
+  }, null);
+  const ready = hasDwelled(history, { dwellMs, now });
+
+  return {
+    supported: true,
+    url: key,
+    platform: ref.platform,
+    tracked: history.length > 0,
+    trackingSince: earliest,
+    confirmedAvailable: ready,
+    readyAt: ready || !earliest ? null : new Date(Date.parse(earliest) + dwellMs).toISOString(),
+    dwellHours,
+    note: earliest
+      ? ready
+        ? 'a surviving-view figure is available from /api/views or /api/verify'
+        : `tracked, but not for ${dwellHours}h yet — call /api/views to refresh the count`
+      : `not yet tracked — the first call to /api/views or /api/verify starts the ${dwellHours}h clock`,
+    errors: [],
+  };
+}
+
 export interface VerifyDeps {
   tracking: TrackingStore;
   oracle?: CountOracle;

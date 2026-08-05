@@ -4,15 +4,130 @@
     "title": "Kronagent Payouts — clip verification",
     "version": "1.0.0",
     "summary": "Does this clip meet the brief, and how many of its views survived?",
-    "description": "A paid API for agents running creator marketing campaigns.\n\nGiven a post URL and a campaign brief, returns (a) whether the clip satisfies the brief, judged by a multimodal model, and (b) how many of its views have **persisted** rather than merely appeared.\n\nThe second number is the point. Inflated view counts are typically scrubbed by the platform after the fact, which is why campaigns pay for views that later turn out not to exist — one documented case paid $1,500 for ~845,000 views that were 99.999% bots. This service reports the count that survived a dwell window instead of the count that was claimed.\n\n**The first call on a given post starts the clock.** A post seen for the first time has no history to compare against, so `views.confirmed` is `null` and `views.pending` explains why. Call again after the dwell window and the surviving figure is returned. Fields that cannot be answered are always `null` with a stated reason — never a plausible-looking zero.\n\nPayment is x402: an unpaid request returns `402 Payment Required` with the payment requirements. No account and no API key.",
-    "contact": { "url": "https://github.com/Aditya-galaxy/kronagent-payouts" },
+    "description": "A paid API for agents running creator marketing campaigns.\n\nGiven a post URL and a campaign brief, returns (a) whether the clip satisfies the brief, judged by a multimodal model, and (b) how many of its views have **persisted** rather than merely appeared.\n\nThe second number is the point. Inflated view counts are typically scrubbed by the platform after the fact, which is why campaigns pay for views that later turn out not to exist — one documented case paid $1,500 for ~845,000 views that were 99.999% bots. This service reports the count that survived a dwell window instead of the count that was claimed.\n\n**The first call on a given post starts the clock.** A post seen for the first time has no history to compare against, so `views.confirmed` is `null` and `views.pending` explains why. Call again after the dwell window and the surviving figure is returned. Fields that cannot be answered are always `null` with a stated reason — never a plausible-looking zero.\n\nPayment is x402: an unpaid request returns `402 Payment Required` with the payment requirements. No account and no API key.\n\n**Three tiers.** `/api/verify/preview` is free and answers whether we can handle a link, whether it is already tracked, and when a surviving figure will exist — it deliberately omits the numbers. `/api/views` returns the counts without a verdict, an order of magnitude cheaper because no model runs. `/api/verify` adds the brief judgment.",
+    "contact": {
+      "url": "https://github.com/Aditya-galaxy/kronagent-payouts"
+    },
     "license": {
       "name": "PolyForm Noncommercial 1.0.0 with Competition Grant",
       "url": "https://github.com/Aditya-galaxy/kronagent-payouts/blob/main/LICENSE"
     }
   },
-  "servers": [{ "url": "https://kronagent.dev", "description": "production" }],
+  "servers": [
+    {
+      "url": "https://kronagent.dev",
+      "description": "production"
+    }
+  ],
   "paths": {
+    "/api/verify/preview": {
+      "get": {
+        "operationId": "previewClip",
+        "summary": "Free. Can this link be handled, and when will a real answer exist?",
+        "description": "Costs nothing and returns no counts. Use it to decide whether a paid call is worth making: it reports whether the URL is supported, whether the post is already under observation, and the timestamp at which a surviving-view figure will first be available.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "dwellHours",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 24,
+              "minimum": 1,
+              "maximum": 168
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Preview.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`url` was missing"
+          }
+        }
+      }
+    },
+    "/api/views": {
+      "post": {
+        "operationId": "clipViews",
+        "summary": "Latest and surviving view counts. No verdict.",
+        "description": "Price: 0.005 USDC per call — a tenth of `/api/verify`, because no model runs. A `brief` sent here is not judged; the response says so rather than dropping it silently.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyRequest"
+              },
+              "examples": {
+                "countsOnly": {
+                  "summary": "Surviving views for a post",
+                  "value": {
+                    "url": "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+                    "dwellHours": 24
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Verification result. Check `errors` — a 200 may still carry null fields.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`url` was missing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required. Body carries x402 payment requirements; retry with an `X-PAYMENT` header.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentRequired"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/verify": {
       "post": {
         "operationId": "verifyClip",
@@ -22,7 +137,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/VerifyRequest" },
+              "schema": {
+                "$ref": "#/components/schemas/VerifyRequest"
+              },
               "examples": {
                 "withBrief": {
                   "summary": "Verify against a brief and get the surviving count",
@@ -34,7 +151,9 @@
                 },
                 "countOnly": {
                   "summary": "Just the surviving view count",
-                  "value": { "url": "https://x.com/someone/status/1789012345678901234" }
+                  "value": {
+                    "url": "https://x.com/someone/status/1789012345678901234"
+                  }
                 }
               }
             }
@@ -45,7 +164,9 @@
             "description": "Verification result. Check `errors` — a 200 may still carry null fields.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/VerifyResponse" }
+                "schema": {
+                  "$ref": "#/components/schemas/VerifyResponse"
+                }
               }
             }
           },
@@ -55,7 +176,11 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "properties": { "error": { "type": "string" } }
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
                 }
               }
             }
@@ -64,7 +189,9 @@
             "description": "Payment required. Body carries x402 payment requirements; retry with an `X-PAYMENT` header.",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/PaymentRequired" }
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentRequired"
+                }
               }
             }
           }
@@ -84,7 +211,9 @@
     "schemas": {
       "VerifyRequest": {
         "type": "object",
-        "required": ["url"],
+        "required": [
+          "url"
+        ],
         "properties": {
           "url": {
             "type": "string",
@@ -99,7 +228,9 @@
           "brief": {
             "type": "string",
             "description": "The campaign brief in plain language. Omit to get view data only, with no verdict. Passed to the model verbatim and never sanitised — hiding injected instructions would hide the failure mode a caller needs to know about.",
-            "examples": ["Clip must show the product on screen and say the brand name aloud."]
+            "examples": [
+              "Clip must show the product on screen and say the brand name aloud."
+            ]
           },
           "dwellHours": {
             "type": "integer",
@@ -112,53 +243,119 @@
       },
       "VerifyResponse": {
         "type": "object",
-        "required": ["url", "platform", "qualifies", "reasons", "views", "checkedAt", "errors"],
+        "required": [
+          "url",
+          "platform",
+          "qualifies",
+          "reasons",
+          "views",
+          "checkedAt",
+          "errors"
+        ],
         "properties": {
           "url": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Canonical URL for the post. Null when the input could not be resolved."
           },
-          "platform": { "type": ["string", "null"], "enum": ["youtube", "x", null] },
+          "platform": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "youtube",
+              "x",
+              null
+            ]
+          },
           "qualifies": {
-            "type": ["boolean", "null"],
+            "type": [
+              "boolean",
+              "null"
+            ],
             "description": "Whether the clip meets the brief. **Null means not judged** — no brief supplied, or the verifier was unavailable. Never defaults to true."
           },
           "reasons": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Written justification for the verdict, suitable for showing to the creator."
           },
-          "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
-          "model": { "type": ["string", "null"], "description": "Which model produced the verdict." },
-          "views": { "$ref": "#/components/schemas/Views" },
-          "checkedAt": { "type": "string", "format": "date-time" },
+          "confidence": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Which model produced the verdict."
+          },
+          "views": {
+            "$ref": "#/components/schemas/Views"
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "errors": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Anything that could not be determined, stated plainly. A non-empty array with a 200 status means part of the answer is missing, not that the call failed."
           }
         }
       },
       "Views": {
         "type": "object",
-        "required": ["latest", "confirmed", "dwellHours", "trackingSince", "pending"],
+        "required": [
+          "latest",
+          "confirmed",
+          "dwellHours",
+          "trackingSince",
+          "pending"
+        ],
         "properties": {
           "latest": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Current count from the platform API, as a string to avoid precision loss. Null if the platform did not answer — never substituted with zero."
           },
           "confirmed": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Views that **survived** the dwell window: `min(latest, count at least dwellHours ago)`. Null until this post has been tracked long enough. If a platform scrubs inflated views between calls, this figure falls and the difference was never payable."
           },
-          "dwellHours": { "type": "integer" },
+          "dwellHours": {
+            "type": "integer"
+          },
           "trackingSince": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time",
             "description": "When this post was first seen. The dwell window is measured from here."
           },
           "pending": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Why `confirmed` is null, when it is. Null once a surviving figure is available."
           }
         }
@@ -167,27 +364,120 @@
         "type": "object",
         "description": "x402 payment requirements.",
         "properties": {
-          "x402Version": { "type": "integer" },
+          "x402Version": {
+            "type": "integer"
+          },
           "accepts": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "scheme": { "type": "string" },
-                "network": { "type": "string" },
-                "maxAmountRequired": { "type": "string" },
-                "resource": { "type": "string" },
-                "description": { "type": "string" },
-                "payTo": { "type": "string" },
-                "asset": { "type": "string" }
+                "scheme": {
+                  "type": "string"
+                },
+                "network": {
+                  "type": "string"
+                },
+                "maxAmountRequired": {
+                  "type": "string"
+                },
+                "resource": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "payTo": {
+                  "type": "string"
+                },
+                "asset": {
+                  "type": "string"
+                }
               }
+            }
+          }
+        }
+      },
+      "PreviewResponse": {
+        "type": "object",
+        "required": [
+          "supported",
+          "url",
+          "platform",
+          "tracked",
+          "confirmedAvailable",
+          "dwellHours",
+          "note",
+          "errors"
+        ],
+        "properties": {
+          "supported": {
+            "type": "boolean",
+            "description": "Whether this URL can be verified at all."
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Canonical URL, or null if unresolvable."
+          },
+          "platform": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "youtube",
+              "x",
+              null
+            ]
+          },
+          "tracked": {
+            "type": "boolean",
+            "description": "Whether the post is already under observation."
+          },
+          "trackingSince": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "confirmedAvailable": {
+            "type": "boolean",
+            "description": "Whether a surviving-view figure exists yet. **Not the figure** — that is the paid answer."
+          },
+          "readyAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "When a surviving figure will first be available, if it is not already."
+          },
+          "dwellHours": {
+            "type": "integer"
+          },
+          "note": {
+            "type": "string",
+            "description": "Plain-language next step."
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
             }
           }
         }
       }
     }
   },
-  "security": [{ "x402": [] }],
+  "security": [
+    {
+      "x402": []
+    }
+  ],
   "tags": [
     {
       "name": "SOCIAL_INTELLIGENCE",
