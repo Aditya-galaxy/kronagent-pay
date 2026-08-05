@@ -4,3 +4,6 @@ dist/
 *.tsbuildinfo
 __pycache__/
 *.pyc
+
+# working context, not documentation for anyone else
+HANDOFF.md
