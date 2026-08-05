@@ -134,6 +134,49 @@ export class CampaignStore implements CampaignView {
     return this.payouts.filter((p) => p.campaignId === campaignId);
   }
 
+  /**
+   * Everything needed to reconstruct this store elsewhere.
+   *
+   * Exists because the dwell mechanic is only meaningful across process
+   * lifetimes: comparing today's view count against yesterday's is impossible
+   * if yesterday died with the instance. On a scale-to-zero deployment that is
+   * not an edge case, it is the normal state of affairs.
+   */
+  exportState(): {
+    campaigns: Campaign[];
+    creators: Creator[];
+    submissions: Submission[];
+    verdicts: Verdict[];
+    snapshots: Snapshot[];
+    payouts: Payout[];
+  } {
+    return {
+      campaigns: [...this.campaigns.values()],
+      creators: [...this.creators.values()],
+      submissions: [...this.submissions.values()],
+      verdicts: [...this.verdicts.values()].flat(),
+      snapshots: [...this.snaps.values()].flat(),
+      payouts: [...this.payouts],
+    };
+  }
+
+  /** Replace all state. Used on boot, never mid-decision. */
+  hydrate(state: ReturnType<CampaignStore['exportState']>): void {
+    this.campaigns.clear();
+    this.creators.clear();
+    this.submissions.clear();
+    this.verdicts.clear();
+    this.snaps.clear();
+    this.payouts.length = 0;
+
+    for (const campaign of state.campaigns) this.putCampaign(campaign);
+    for (const creator of state.creators) this.putCreator(creator);
+    for (const submission of state.submissions) this.putSubmission(submission);
+    for (const verdict of state.verdicts) this.addVerdict(verdict);
+    for (const snapshot of state.snapshots) this.addSnapshot(snapshot);
+    for (const payout of state.payouts) this.recordPayout(payout);
+  }
+
   /** Pool minus settled spend. The number FR-T1 publishes to creators. */
   remainingPool(campaignId: string): Decimal {
     const campaign = this.campaigns.get(campaignId);
