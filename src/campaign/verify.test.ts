@@ -9,7 +9,7 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import { MemoryTrackingStore, verifyClip } from './verify';
+import { MemoryTrackingStore, previewClip, verifyClip } from './verify';
 import type { ClipVerifier, CountOracle } from './verify';
 
 const URL_IN = 'https://youtu.be/dQw4w9WgXcQ';
@@ -162,5 +162,51 @@ describe('refusing to claim what it cannot check', () => {
       { tracking: new MemoryTrackingStore(), oracle: oracleOf(1n) },
     );
     expect(res.views.dwellHours).toBe(168);
+  });
+});
+
+describe('the free preview tier', () => {
+  test('an untracked post reports how the clock starts', () => {
+    const res = previewClip({ url: URL_IN }, { tracking: new MemoryTrackingStore(), now: at('2026-08-05T12:00:00Z') });
+    expect(res.supported).toBe(true);
+    expect(res.url).toBe(CANON);
+    expect(res.tracked).toBe(false);
+    expect(res.confirmedAvailable).toBe(false);
+    expect(res.note).toContain('starts the 24h clock');
+  });
+
+  test('it never leaks the number being sold', async () => {
+    // The whole point of a free tier is discovery, not a way around paying.
+    const tracking = new MemoryTrackingStore();
+    await verifyClip({ url: URL_IN }, { tracking, oracle: oracleOf(5_000n), now: at('2026-08-05T00:00:00Z') });
+    const res = previewClip({ url: URL_IN }, { tracking, now: at('2026-08-06T06:00:00Z') });
+
+    expect(res.tracked).toBe(true);
+    expect(res.confirmedAvailable).toBe(true);
+    expect(JSON.stringify(res)).not.toContain('5000');
+  });
+
+  test('it says when a real answer will exist', async () => {
+    const tracking = new MemoryTrackingStore();
+    await verifyClip({ url: URL_IN }, { tracking, oracle: oracleOf(10n), now: at('2026-08-05T00:00:00Z') });
+    const res = previewClip({ url: URL_IN }, { tracking, now: at('2026-08-05T06:00:00Z') });
+    expect(res.confirmedAvailable).toBe(false);
+    expect(res.readyAt).toBe('2026-08-06T00:00:00.000Z');
+  });
+
+  test('an unsupported platform is refused before anyone pays', () => {
+    const res = previewClip(
+      { url: 'https://www.instagram.com/reel/Cabc123/' },
+      { tracking: new MemoryTrackingStore() },
+    );
+    expect(res.supported).toBe(false);
+    expect(res.errors[0]).toContain('app review');
+  });
+
+  test('it costs nothing to serve — no oracle is consulted', () => {
+    // previewClip takes no oracle at all, which is the guarantee. If it ever
+    // gains one, this test stops compiling and someone has to think about it.
+    const res = previewClip({ url: URL_IN }, { tracking: new MemoryTrackingStore() });
+    expect(res.supported).toBe(true);
   });
 });

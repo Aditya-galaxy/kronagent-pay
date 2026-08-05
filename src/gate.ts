@@ -3,9 +3,17 @@
  *
  * Circle's starter kits define one seam for spend control:
  *
- *     type ApprovalFn = (toolName: string, args: unknown) => Promise<boolean>;
+ *     type ApprovalFn = (
+ *       toolName: string,
+ *       args: Record<string, unknown>,
+ *     ) => Promise<boolean>;
  *
- * and wire it into the ADK's `beforeToolCallback` (LangChain's `interruptOn`,
+ * — verbatim from `kits/google-adk/src/agent.ts`. Ours takes `args: unknown`,
+ * which is wider and therefore still assignable, since parameters are checked
+ * contravariantly. It drops in without a cast while declining to assume the
+ * shape of something a model produced.
+ *
+ * The kit wires this into the ADK's `beforeToolCallback` (LangChain's `interruptOn`,
  * the Claude Agent SDK's `canUseTool` — same idea, three frameworks). Their
  * implementation prints the pending call and asks a human `y/N` in the
  * terminal, every single time.

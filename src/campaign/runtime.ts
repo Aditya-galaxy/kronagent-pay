@@ -29,7 +29,7 @@ import {
   type BlobStore,
 } from './persistence';
 import { CampaignStore } from './store';
-import { MemoryTrackingStore, verifyClip } from './verify';
+import { MemoryTrackingStore, previewClip, verifyClip } from './verify';
 import type { ClipVerifier, CountOracle } from './verify';
 import { CircleCliExecutor } from './executor';
 import { DryRunExecutor, runTick, type PayoutExecutor, type TickResult, type ViewOracle } from './tick';
@@ -178,6 +178,54 @@ export class CampaignRuntime {
         errors: this.lastTick.errors,
       },
     };
+  }
+
+  /**
+   * Free. Can we handle this link, are we already watching it, and when will a
+   * real answer exist? No platform call and no model, so it costs us nothing —
+   * and it deliberately omits the numbers, which are the thing being sold.
+   */
+  async handlePreview(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    const target =
+      url.searchParams.get('url') ??
+      ((await request.json().catch(() => ({}))) as { url?: string }).url;
+    if (!target) return Response.json({ error: 'url is required' }, { status: 400 });
+    const dwell = Number(url.searchParams.get('dwellHours'));
+    return Response.json(
+      previewClip(
+        { url: target, dwellHours: Number.isFinite(dwell) && dwell > 0 ? dwell : undefined },
+        { tracking: this.tracking },
+      ),
+    );
+  }
+
+  /**
+   * Counts only: latest and surviving views, no verdict.
+   *
+   * Priced well below `/api/verify` because no model runs. A caller who only
+   * wants the surviving number should not pay for a video to be watched.
+   */
+  async handleViews(request: Request): Promise<Response> {
+    const body = (await request.json().catch(() => ({}))) as {
+      url?: string;
+      brief?: string;
+      dwellHours?: number;
+    };
+    if (!body.url) return Response.json({ error: 'url is required' }, { status: 400 });
+    const result = await verifyClip(
+      { url: body.url, dwellHours: body.dwellHours },
+      { tracking: this.tracking, oracle: this.counts },
+    );
+    // Say so rather than silently dropping it — the caller paid the cheaper
+    // price and would otherwise wonder where their verdict went.
+    if (body.brief) {
+      result.errors.push(
+        'a brief was supplied but /api/views does not judge it — no model runs at ' +
+          'this price. Use /api/verify for a verdict.',
+      );
+    }
+    return Response.json(result);
   }
 
   /**

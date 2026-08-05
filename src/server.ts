@@ -54,6 +54,24 @@ const JOB_PRICE_USDC = USDC('1.00');
  */
 const VERIFY_PRICE_USDC = USDC('0.05');
 
+/**
+ * Counts without a verdict.
+ *
+ * An order of magnitude cheaper because no model runs. A caller who only wants
+ * the surviving-view number should not be charged for a video to be watched,
+ * and pricing the two the same would be charging for work we did not do.
+ */
+const VIEWS_PRICE_USDC = USDC('0.005');
+
+const viewsX402Config = () => ({
+  payTo: RECEIVING_WALLET,
+  priceUsdc: VIEWS_PRICE_USDC,
+  resource: '/api/views',
+  description:
+    'Latest and surviving view counts for a YouTube or X post. No verdict, no ' +
+    'model — an order of magnitude cheaper than /api/verify.',
+});
+
 const verifyX402Config = () => ({
   payTo: RECEIVING_WALLET,
   priceUsdc: VERIFY_PRICE_USDC,
@@ -171,6 +189,35 @@ const server = Bun.serve({
       return (await spec.exists())
         ? new Response(spec, { headers: { 'content-type': 'application/json; charset=utf-8' } })
         : json({ error: 'spec not found' }, 404);
+    }
+
+    // Free, and deliberately so. It answers "can you handle this link, are you
+    // already watching it, when will a real answer exist" — everything an agent
+    // needs to plan a call, and nothing it could use instead of making one. The
+    // marketplace's larger sellers all list free routes for exactly this
+    // reason: an agent can discover them and confirm they work before spending.
+    if (url.pathname === '/api/verify/preview') {
+      return campaigns.handlePreview(request);
+    }
+
+    // Counts only. Same handshake, a tenth of the price, because no model runs.
+    if (url.pathname === '/api/views' && request.method === 'POST') {
+      const paid = verifyPayment(request.headers.get('X-PAYMENT'), viewsX402Config());
+      if (!paid.ok) {
+        return new Response(JSON.stringify(paymentRequiredBody(viewsX402Config()), null, 2), {
+          status: 402,
+          headers: { 'content-type': 'application/json; charset=utf-8' },
+        });
+      }
+      revenue = revenue.plus(paid.proof.amountUsdc);
+      world.ledger.append('settlement', {
+        direction: 'received',
+        payer: paid.proof.payer,
+        amountUsdc: paid.proof.amountUsdc.toString(),
+        txHash: paid.proof.txHash,
+        resource: '/api/views',
+      });
+      return campaigns.handleViews(request);
     }
 
     // What we sell to other agents. Paywalled with the same x402 handshake the

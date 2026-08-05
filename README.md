@@ -94,14 +94,19 @@ Payouts settle over `circle wallet transfer`. Two flags do real work: `--idempot
 
 ## What we sell to other agents
 
-The engine's core competence, extracted and priced:
+The engine's core competence, extracted and priced in three tiers:
 
-```
-POST /api/verify        0.05 USDC, x402 — no account, no API key
-{ "url": "https://youtube.com/shorts/…", "brief": "show the product, say the name" }
-```
+| Endpoint | Price | What it answers |
+|---|---|---|
+| `GET /api/verify/preview` | **free** | Can you handle this link, are you already watching it, when will a real answer exist? |
+| `POST /api/views` | 0.005 USDC | Latest and surviving view counts. No verdict. |
+| `POST /api/verify` | 0.05 USDC | All of the above, plus *does this clip meet the brief?* |
 
-> *Does this clip meet the brief, and how many of its views survived?*
+x402 throughout — **no account, no API key, no card on file.**
+
+The free tier is deliberate and it deliberately omits the numbers. It tells a buying agent everything needed to *plan* a call and nothing it could use *instead of* one. The larger sellers in Circle's marketplace all list free routes for the same reason: an agent has to be able to discover you and confirm you work before it will spend anything.
+
+The price gap is honest rather than promotional — `/api/views` is a tenth of `/api/verify` because no model runs, and charging the same for both would be charging for work we didn't do.
 
 **The first call on a post starts the clock.** A post seen for the first time has no yesterday to compare against, so `views.confirmed` comes back `null` with a stated reason rather than a plausible-looking zero — call again after the dwell window and the surviving figure is there. Every field that cannot be answered is `null` with a reason. A verification service that fabricates the number it exists to report is worse than one that admits it doesn't know yet.
 
