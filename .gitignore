@@ -7,3 +7,6 @@ __pycache__/
 
 # working context, not documentation for anyone else
 HANDOFF.md
+
+# planning + strategy, not documentation for anyone else
+docs/
