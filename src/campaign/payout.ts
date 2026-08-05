@@ -12,7 +12,7 @@
  * Order of evaluation, first match wins:
  *
  *   1. Unknown submission / campaign / creator   -> blocked
- *   2. Campaign not active, or outside its dates -> blocked
+ *   2. Past the agreed settlement deadline       -> blocked
  *   3. No verdict, or the verdict failed         -> blocked
  *   4. Nothing has survived the dwell period yet -> held
  *   5. No views beyond what was already paid     -> no_op
@@ -20,7 +20,14 @@
  *   7. Over this creator's cap for the campaign  -> requires_approval
  *   8. -> PaymentPolicyEngine.decide()
  *
- * Two of these deserve a note.
+ * **The live campaign is not consulted for an accepted clip.** Rate, dwell and
+ * per-creator cap all come from `submission.acceptedTerms`, frozen when the
+ * clip was taken in. A brand may pause or end a campaign — that refuses *new*
+ * work, at `acceptSubmission`, before a creator has spent any effort. It does
+ * not abandon work already accepted. Without this the system reproduces the
+ * complaint it was built to answer.
+ *
+ * Three of these deserve a note.
  *
  * **The pool check blocks rather than escalating.** Every other cap in this
  * system routes to a human, because a wrongly-held payment costs attention and
@@ -40,12 +47,13 @@ import { Decimal } from '../decimal';
 import type { PaymentPolicyEngine } from '../policy';
 import type { PaymentDecision, PaymentIntent, PolicyControl } from '../schemas';
 import type { CampaignView } from './store';
+import { termsExpired } from './terms';
 import { confirmedViews, earningsFor, hasDwelled, payableViews } from './views';
 
 export type PayoutControl =
   | 'unknown_entity'
   | 'campaign_inactive'
-  | 'campaign_window'
+  | 'terms_expired'
   | 'no_verdict'
   | 'verdict_failed'
   | 'dwell_unmet'
@@ -123,24 +131,31 @@ export class PayoutGate {
       };
     }
 
-    if (campaign.status !== 'active') {
+    // From here the live campaign no longer governs this clip. It was accepted
+    // under terms, and those terms are what it settles under — pausing or
+    // ending a campaign refuses *new* work (see `acceptSubmission`), it does
+    // not abandon work already taken.
+    const terms = submission.acceptedTerms;
+
+    if (termsExpired(terms, now)) {
+      return {
+        ...base,
+        disposition: 'blocked',
+        control: 'terms_expired',
+        reason:
+          `the settlement window for this clip closed on ${terms.settlementDeadline} — ` +
+          'the brand was bound until then, and is not after',
+      };
+    }
+
+    if (campaign.status === 'draft') {
+      // Should be unreachable: acceptance refuses a draft campaign. Defensive,
+      // because the failure mode is paying out of an unfunded pool.
       return {
         ...base,
         disposition: 'blocked',
         control: 'campaign_inactive',
-        reason: `campaign ${campaign.campaignId} is ${campaign.status}, so it pays nothing`,
-      };
-    }
-
-    const nowMs = now.getTime();
-    if (nowMs < Date.parse(campaign.startsAt) || nowMs >= Date.parse(campaign.endsAt)) {
-      return {
-        ...base,
-        disposition: 'blocked',
-        control: 'campaign_window',
-        reason:
-          `outside the campaign window (${campaign.startsAt} to ${campaign.endsAt}) — ` +
-          'views earned outside the dates the operator funded are not payable',
+        reason: `campaign ${campaign.campaignId} is still a draft`,
       };
     }
 
@@ -164,8 +179,8 @@ export class PayoutGate {
     }
 
     const snapshots = this.view.snapshots(submissionId);
-    if (!hasDwelled(snapshots, { dwellMs: campaign.dwellMs, now })) {
-      const hours = Math.round(campaign.dwellMs / 3_600_000);
+    if (!hasDwelled(snapshots, { dwellMs: terms.dwellMs, now })) {
+      const hours = Math.round(terms.dwellMs / 3_600_000);
       return {
         ...base,
         disposition: 'held',
@@ -176,9 +191,10 @@ export class PayoutGate {
       };
     }
 
-    const confirmed = confirmedViews(snapshots, { dwellMs: campaign.dwellMs, now });
+    const confirmed = confirmedViews(snapshots, { dwellMs: terms.dwellMs, now });
     const payable = payableViews(confirmed, this.view.viewsPaidTo(submissionId));
-    const amount = earningsFor(payable, campaign.cpmUsdc);
+    // The rate the creator agreed to, not whatever the brand set since.
+    const amount = earningsFor(payable, terms.cpmUsdc);
 
     if (payable <= 0n || !amount.isPositive()) {
       return {
@@ -208,14 +224,14 @@ export class PayoutGate {
     }
 
     const creatorSpent = this.view.spentOnCreator(campaign.campaignId, creator.creatorId);
-    if (creatorSpent.plus(amount).gt(campaign.perCreatorCapUsdc)) {
+    if (creatorSpent.plus(amount).gt(terms.perCreatorCapUsdc)) {
       return {
         ...withAmounts,
         disposition: 'requires_approval',
         control: 'per_creator_cap',
         reason:
           `${creator.creatorId} would reach ${creatorSpent.plus(amount)} USDC on this ` +
-          `campaign, over the ${campaign.perCreatorCapUsdc} USDC per-creator cap`,
+          `campaign, over the ${terms.perCreatorCapUsdc} USDC per-creator cap`,
       };
     }
 
@@ -226,7 +242,7 @@ export class PayoutGate {
       rail: 'direct_transfer',
       chain: campaign.chain,
       purpose:
-        `${payable} confirmed views on ${submission.url} at ${campaign.cpmUsdc} USDC/1k`,
+        `${payable} confirmed views on ${submission.url} at ${terms.cpmUsdc} USDC/1k (agreed ${terms.acceptedAt})`,
       agentId: options.agentId,
       requestedAt: at,
       context: { submissionId, campaignId: campaign.campaignId, verdictId: verdict.verdictId },

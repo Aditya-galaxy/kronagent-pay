@@ -20,6 +20,7 @@ import { MandateStore, issueMandate } from '../mandates';
 import { PaymentPolicyEngine } from '../policy';
 import { CampaignStore } from './store';
 import { PayoutGate } from './payout';
+import { termsFor } from './terms';
 import type { Campaign, Verdict } from './types';
 
 const DWELL = 3_600_000; // 1h, so a short run still crosses it
@@ -82,6 +83,7 @@ function simulate(run: Run) {
     rateBand: { minUsdc: new Decimal('0.1'), maxUsdc: new Decimal('5') },
     perCreatorCapUsdc: new Decimal(run.perCreatorCapUsdc),
     dwellMs: DWELL,
+    settlementWindowMs: 14 * 86_400_000,
     platforms: ['youtube'],
     chain: 'base-sepolia',
     status: 'active',
@@ -105,6 +107,7 @@ function simulate(run: Run) {
       postId: `p-${i}`,
       url: `https://youtube.com/shorts/${i}`,
       submittedAt: new Date(START).toISOString(),
+      acceptedTerms: termsFor(campaign, new Date(START)),
     });
     store.addVerdict(verdict(`sub-${i}`, run.verdictPasses[i] ?? true));
     mandates.put(

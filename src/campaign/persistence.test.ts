@@ -12,6 +12,7 @@ import fc from 'fast-check';
 
 import { Decimal } from '../decimal';
 import { CampaignStore } from './store';
+import { termsFor } from './terms';
 import {
   GcsBlobStore,
   MemoryBlobStore,
@@ -31,6 +32,7 @@ const campaign = (over: Partial<Campaign> = {}): Campaign => ({
   rateBand: { minUsdc: new Decimal('0.5'), maxUsdc: new Decimal('2') },
   perCreatorCapUsdc: new Decimal('10'),
   dwellMs: 86_400_000,
+  settlementWindowMs: 14 * 86_400_000,
   platforms: ['youtube'],
   chain: 'base-sepolia',
   status: 'active',
@@ -51,6 +53,7 @@ function populated(): CampaignStore {
     postId: 'yt-1',
     url: 'https://youtube.com/shorts/1',
     submittedAt: '2026-08-02T00:00:00.000Z',
+    acceptedTerms: termsFor(campaign(), new Date('2026-08-02T00:00:00.000Z')),
   });
   store.addVerdict({
     verdictId: 'v-1',

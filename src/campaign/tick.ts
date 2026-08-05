@@ -99,7 +99,12 @@ export async function runTick(
   let total = new Decimal(0n);
   let submissionCount = 0;
 
-  const campaigns = store.exportState().campaigns.filter((c) => c.status === 'active');
+  // Not `status === 'active'`. A paused or ended campaign still owes on clips
+  // it already accepted, and skipping it here would honour the terms in the
+  // gate while never asking the gate — the guarantee would hold in a unit test
+  // and quietly fail in production. Only a draft has nothing to settle, and
+  // `terms_expired` is what actually ends the obligation.
+  const campaigns = store.exportState().campaigns.filter((c) => c.status !== 'draft');
   const submissions = store.exportState().submissions;
 
   for (const campaign of campaigns) {
