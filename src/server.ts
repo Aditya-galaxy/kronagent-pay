@@ -45,6 +45,26 @@ const campaigns = new CampaignRuntime();
 const JOB_PRICE_USDC = USDC('1.00');
 
 /**
+ * What one clip verification costs another agent.
+ *
+ * The marketplace's median listing is $0.02 and its p90 is $1.00, across 958
+ * listings. This sits above the median because the call is not free to serve —
+ * a multimodal model watches the video — and well under the p90 because a
+ * buying agent checking a hundred clips should not think twice.
+ */
+const VERIFY_PRICE_USDC = USDC('0.05');
+
+const verifyX402Config = () => ({
+  payTo: RECEIVING_WALLET,
+  priceUsdc: VERIFY_PRICE_USDC,
+  resource: '/api/verify',
+  description:
+    'Does this clip meet the brief, and how many of its views survived? ' +
+    'YouTube and X. The first call starts the dwell clock; later calls report ' +
+    'what persisted.',
+});
+
+/**
  * Where revenue lands. In production this is the Circle agent wallet address
  * from `circle wallet list`; the placeholder keeps the endpoint honest about
  * being unfunded rather than pretending otherwise.
@@ -141,6 +161,37 @@ const server = Bun.serve({
     // as a request, so Cloud Logging records every agent run for free.
     if (url.pathname === '/api/tick' && request.method === 'POST') {
       return campaigns.handleTick(request);
+    }
+
+    // The machine-readable contract. Circle's marketplace requires a published
+    // OpenAPI spec so a buying agent can read the inputs and outputs itself
+    // rather than being told about them by a human.
+    if (url.pathname === '/openapi.json') {
+      const spec = Bun.file('openapi.json');
+      return (await spec.exists())
+        ? new Response(spec, { headers: { 'content-type': 'application/json; charset=utf-8' } })
+        : json({ error: 'spec not found' }, 404);
+    }
+
+    // What we sell to other agents. Paywalled with the same x402 handshake the
+    // marketplace expects: a buying agent needs no account here and no API key.
+    if (url.pathname === '/api/verify' && request.method === 'POST') {
+      const paid = verifyPayment(request.headers.get('X-PAYMENT'), verifyX402Config());
+      if (!paid.ok) {
+        return new Response(JSON.stringify(paymentRequiredBody(verifyX402Config()), null, 2), {
+          status: 402,
+          headers: { 'content-type': 'application/json; charset=utf-8' },
+        });
+      }
+      revenue = revenue.plus(paid.proof.amountUsdc);
+      world.ledger.append('settlement', {
+        direction: 'received',
+        payer: paid.proof.payer,
+        amountUsdc: paid.proof.amountUsdc.toString(),
+        txHash: paid.proof.txHash,
+        resource: '/api/verify',
+      });
+      return campaigns.handleVerify(request);
     }
 
     // The auditor's export: the whole chain, envelopes included, so anyone can

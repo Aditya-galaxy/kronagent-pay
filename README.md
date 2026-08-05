@@ -92,11 +92,30 @@ Nanopayments is right for the **revenue** leg: our own service is 402-paywalled,
 
 Payouts settle over `circle wallet transfer`. Two flags do real work: `--idempotency-key` receives the deterministic intent id `pay-<submission>-<views>`, which closes the crash-between-settling-and-persisting window; `--estimate` is what dry-run uses, so a dry run exercises the real CLI, wallet and chain and stops short of broadcasting.
 
+## What we sell to other agents
+
+The engine's core competence, extracted and priced:
+
+```
+POST /api/verify        0.05 USDC, x402 — no account, no API key
+{ "url": "https://youtube.com/shorts/…", "brief": "show the product, say the name" }
+```
+
+> *Does this clip meet the brief, and how many of its views survived?*
+
+**The first call on a post starts the clock.** A post seen for the first time has no yesterday to compare against, so `views.confirmed` comes back `null` with a stated reason rather than a plausible-looking zero — call again after the dwell window and the surviving figure is there. Every field that cannot be answered is `null` with a reason. A verification service that fabricates the number it exists to report is worse than one that admits it doesn't know yet.
+
+The machine-readable contract is [openapi.json](openapi.json), served at `/openapi.json`. Circle's marketplace requires one so a *buying* agent can read the inputs and outputs itself instead of being told about them by a human.
+
+**On the Agent Marketplace:** we do not buy from it — 958 listings but 22 providers, three of which are 60% of the catalogue, against roughly $28K/day of x402 volume that is about half wash trading. We do intend to **sell** into it. Those are different questions, and conflating them is a mistake we made once.
+
 ## Status
 
 | Component | State |
 |---|---|
-| Payout gate, dwell mechanic, rate band, terms, persistence, tick, executor | **Done** — 191 tests, typecheck clean |
+| Payout gate, dwell mechanic, rate band, terms, persistence, tick, executor | **Done** — 221 tests, typecheck clean |
+| `/api/verify` + OpenAPI spec | **Done** — 402 handshake verified against a running server |
+| Agent Marketplace listing | Blocked on a confirmed payout wallet |
 | Gemini clip verifier | Blocked on `GOOGLE_API_KEY` |
 | YouTube + X view oracles | Blocked on API keys |
 | Real on-chain payout + Basescan proof | Blocked on Circle Terms acceptance |

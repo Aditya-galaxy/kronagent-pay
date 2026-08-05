@@ -297,7 +297,7 @@ control, and the *ordering* of the ladder.
 **Property tests** cover the ones we didn't. Every invariant in §2 is asserted
 over generated campaigns: view trajectories that collapse, counts that spike to
 a cap, several creators drawing on one pool, verdicts failing partway through.
-191 tests, ~16,000 assertions per run.
+221 tests, ~16,400 assertions per run.
 
 **The generator is itself tested.** An earlier version produced 74
 authorizations against 2,110 pool blocks — monotonicity and authorization were
