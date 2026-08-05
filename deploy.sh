@@ -12,7 +12,7 @@ set -euo pipefail
 
 PROJECT="${PROJECT:-$(gcloud config get-value project 2>/dev/null)}"
 REGION="${REGION:-us-central1}"
-SERVICE="${SERVICE:-kronagent-pay}"
+SERVICE="${SERVICE:-kronagent-payouts}"
 
 if [ -z "$PROJECT" ] || [ "$PROJECT" = "(unset)" ]; then
   echo "No GCP project set. Run: gcloud config set project <project-id>" >&2
