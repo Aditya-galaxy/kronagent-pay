@@ -31,7 +31,7 @@ gcloud run deploy "$SERVICE" \
   --port 8080 \
   --cpu 1 \
   --memory 512Mi \
-  --min-instances 1 \
+  --min-instances 0 \
   --max-instances 4 \
   --timeout 60s \
   --set-env-vars "NODE_ENV=production,GCS_BUCKET=${GCS_BUCKET:-},TICK_SECRET=${TICK_SECRET:-}"
