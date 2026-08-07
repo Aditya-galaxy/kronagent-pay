@@ -183,24 +183,41 @@ concurrent gate calls in one process observe the same pre-spend total.
 
 | Gap | Consequence | Severity |
 |---|---|---|
-| **Whole-state blob, last-write-wins** | Two concurrent ticks each load, decide and save — the second clobbers the first, and a payout can be lost from the record while having actually settled | **Critical** |
-| Single-writer hash chain | Concurrent appends from two instances produce a chain that cannot verify | High |
+| ~~Whole-state blob, last-write-wins~~ | **Fixed.** State is an append-only log, one object per event, written create-only | — |
+| ~~Single-writer hash chain~~ | **Fixed.** The chain is derived on read, so concurrent appends cannot fork it | — |
 | Budget consumed at authorization, never released | A payment that fails after authorization starves the agent until the window rolls | Medium |
 | Full state rewritten per payout | O(state) write per settlement; fine at hundreds, wrong at millions | Medium |
 | Wall-clock expiry and dwell | Skew between instances shifts both by the skew | Low |
 | YouTube quota 10k units/day, no self-serve increase | Caps real campaign size regardless of pool | Medium |
 
-The first row is the one that matters and it is **new** — persistence solved
-the durability problem and introduced a concurrency one. Today it is not live:
-the tick is secret-gated and driven by an hourly Cloud Scheduler job, so
-concurrent passes require a tick to overrun an hour or the scheduler to
-double-fire. That is a property of the deployment schedule, not of the design,
-and configuration is exactly the wrong place for a safety property to live.
+The first two rows used to read Critical and High. Both are gone, and not by
+pinning the deployment to one instance — configuration is the wrong place for a
+safety property to live.
 
-Mitigation before real scale: either pin the tick to a single instance, or move
-to §5.1. The idempotency key (`pay-<submission>-<confirmed views>`, passed to
-`circle wallet transfer --idempotency-key`) already prevents the *double
-payment*; what it does not prevent is the *lost record*.
+**State is an append-only log.** One object per event, keyed
+`<iso timestamp>__<event id>`, written with a create-only precondition
+(`ifGenerationMatch=0` on GCS). Concurrent passes touch different keys and
+cannot clobber each other; two passes producing the same fact produce the same
+key, and the second write is refused by the storage layer rather than by us
+remembering to check. For payouts the event id *is*
+`pay-<submission>-<confirmed views>` — the same value passed to
+`circle wallet transfer --idempotency-key` — so both sides of the boundary
+dedupe on one identifier.
+
+**The chain is derived, not maintained.** Nothing writes chain links. Events
+are facts; the chain is a function over them — list, sort, hash forward — so
+the single-writer assumption never applies. Tamper-evidence is unchanged, and
+**anyone can recompute the root from the events alone**, which is strictly
+better for the audit argument: a verifier no longer has to trust that we linked
+the entries honestly.
+
+The cost is O(n) on read rather than O(1) on append. At hundreds of events that
+is microseconds; §5.4 records the checkpointing answer for when it is not.
+
+One consequence worth naming: **a direct write to the in-memory store is now
+erased on the next replay.** That is deliberate — the log is the source of
+truth — but it is a footgun, and it caught two of our own tests when the change
+landed.
 
 ---
 
@@ -256,11 +273,15 @@ forks.
 
 Two options, in preference order:
 
-1. **Per-campaign chains.** Each campaign's ledger is its own chain, appended
-   under the same per-campaign lock as the pool. Verification is per-campaign,
-   which is also how a brand or a creator reads it. Preferred.
-2. **A sequencer.** A single writer assigns positions. Correct, and a
-   bottleneck and a single point of failure.
+**Resolved by deriving the chain on read** — see §4. Neither of the options
+below was needed:
+
+1. ~~Per-campaign chains under a per-campaign lock.~~
+2. ~~A sequencer assigning positions.~~ Correct, and a bottleneck and a single
+   point of failure.
+
+What remains for scale is checkpointing: store a signed root periodically and
+replay only the tail, so verification stays sub-linear once the log is large.
 
 Entries are append-only and never updated. The chain gives
 tamper-*evidence*; write access to the store still permits truncation, and

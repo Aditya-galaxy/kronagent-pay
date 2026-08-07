@@ -10,3 +10,6 @@ HANDOFF.md
 
 # planning + strategy, not documentation for anyone else
 docs/
+
+# bun project — npm lockfiles are not ours
+package-lock.json

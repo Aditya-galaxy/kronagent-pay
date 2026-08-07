@@ -34,46 +34,52 @@ const campaign: Campaign = {
   endsAt: '2026-09-01T00:00:00.000Z',
 };
 
-function runtime(env: Record<string, string | undefined> = {}) {
+async function runtime(env: Record<string, string | undefined> = {}) {
   const rt = new CampaignRuntime({
     blobs: new MemoryBlobStore(),
     executor: new DryRunExecutor(),
     env: { TICK_SECRET: 'correct-horse', ...env },
   });
-  rt.store.putCampaign(campaign);
-  rt.store.putCreator({ creatorId: 'cre-1', payoutAddress: '0xabc', handles: {} });
-  rt.store.putSubmission({
-    submissionId: 'sub-1',
-    campaignId: 'camp-1',
-    creatorId: 'cre-1',
-    platform: 'youtube',
-    postId: 'p',
-    url: 'https://youtube.com/shorts/p',
-    submittedAt: '2026-08-02T00:00:00.000Z',
-    acceptedTerms: termsFor(campaign, new Date('2026-08-02T00:00:00.000Z')),
+
+  // Through the log, not into the store. `ready()` replays the log over the
+  // store, so anything written directly is erased on the next route call —
+  // which is the point: the log is the source of truth.
+  await rt.record({ type: 'campaign_upserted', campaign });
+  await rt.record({
+    type: 'creator_upserted',
+    creator: { creatorId: 'cre-1', payoutAddress: '0xabc', handles: {} },
   });
-  rt.store.addVerdict({
-    verdictId: 'v-1',
-    submissionId: 'sub-1',
-    pass: true,
-    reasons: ['ok'],
-    confidence: 1,
-    model: 'test',
-    at: '2026-08-03T00:00:00.000Z',
+  await rt.record({
+    type: 'submission_accepted',
+    submission: {
+      submissionId: 'sub-1',
+      campaignId: 'camp-1',
+      creatorId: 'cre-1',
+      platform: 'youtube',
+      postId: 'p',
+      url: 'https://youtube.com/shorts/p',
+      submittedAt: '2026-08-02T00:00:00.000Z',
+      acceptedTerms: termsFor(campaign, new Date('2026-08-02T00:00:00.000Z')),
+    },
   });
-  rt.store.addSnapshot({
-    submissionId: 'sub-1',
-    views: 2_000n,
-    fetchedAt: '2026-08-04T00:00:00.000Z',
-    source: 'youtube',
+  await rt.record({
+    type: 'verdict_recorded',
+    verdict: {
+      verdictId: 'v-1', submissionId: 'sub-1', pass: true, reasons: ['ok'],
+      confidence: 1, model: 'test', at: '2026-08-03T00:00:00.000Z',
+    },
+  });
+  await rt.record({
+    type: 'snapshot_taken',
+    snapshot: {
+      submissionId: 'sub-1', views: 2_000n,
+      fetchedAt: '2026-08-04T00:00:00.000Z', source: 'youtube',
+    },
   });
   rt.mandates.put(
     issueMandate({
-      counterparty: '0xabc',
-      maxPerPaymentUsdc: '50',
-      issuedBy: 'operator',
-      reason: 'campaign',
-      now: NOW,
+      counterparty: '0xabc', maxPerPaymentUsdc: '50',
+      issuedBy: 'operator', reason: 'campaign', now: NOW,
     }),
   );
   return rt;
@@ -87,7 +93,7 @@ const tickRequest = (secret?: string) =>
 
 describe('who may start a payout pass', () => {
   test('the right secret runs a pass', async () => {
-    const response = await runtime().handleTick(tickRequest('correct-horse'));
+    const response = await (await runtime()).handleTick(tickRequest('correct-horse'));
     expect(response.status).toBe(200);
     const body = (await response.json()) as { paid: number; totalPaidUsdc: string };
     expect(body.paid).toBe(1);
@@ -95,26 +101,26 @@ describe('who may start a payout pass', () => {
   });
 
   test('a wrong secret is refused', async () => {
-    const response = await runtime().handleTick(tickRequest('wrong'));
+    const response = await (await runtime()).handleTick(tickRequest('wrong'));
     expect(response.status).toBe(401);
   });
 
   test('no secret at all is refused', async () => {
-    const response = await runtime().handleTick(tickRequest());
+    const response = await (await runtime()).handleTick(tickRequest());
     expect(response.status).toBe(401);
   });
 
   test('an unconfigured deployment refuses to tick rather than running open', async () => {
     // The failure that would matter: a public endpoint that disburses USDC to
     // anyone who finds it.
-    const rt = runtime({ TICK_SECRET: undefined });
+    const rt = await runtime({ TICK_SECRET: undefined });
     const response = await rt.handleTick(tickRequest('anything'));
     expect(response.status).toBe(503);
     expect(await response.text()).toContain('refusing to run a payout pass');
   });
 
   test('a refused tick moves no money', async () => {
-    const rt = runtime();
+    const rt = await runtime();
     await rt.handleTick(tickRequest('wrong'));
     expect(rt.store.spentOnCampaign('camp-1').toString()).toBe('0');
   });
@@ -122,7 +128,7 @@ describe('who may start a payout pass', () => {
 
 describe('what a creator can read before doing the work', () => {
   test('the remaining pool is published, and drops after a pass', async () => {
-    const rt = runtime();
+    const rt = await runtime();
     const before = await rt.publicView();
     expect(before.campaigns[0]?.remainingUsdc).toBe('100');
 
@@ -135,7 +141,7 @@ describe('what a creator can read before doing the work', () => {
   test('ephemeral storage is reported rather than hidden', async () => {
     // On Cloud Run this means the dwell window can never be satisfied. Saying
     // so beats a campaign that silently holds everything forever.
-    const view = await runtime().publicView();
+    const view = await (await runtime()).publicView();
     expect(view.ephemeral).toBe(true);
   });
 });

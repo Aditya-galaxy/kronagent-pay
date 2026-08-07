@@ -10,9 +10,10 @@
 #
 set -euo pipefail
 
-PROJECT="${PROJECT:-$(gcloud config get-value project 2>/dev/null)}"
+PROJECT="${PROJECT:-kronagent}"
 REGION="${REGION:-us-central1}"
 SERVICE="${SERVICE:-kronagent-payouts}"
+BUCKET="${GCS_BUCKET:-kronagent-state}"
 
 if [ -z "$PROJECT" ] || [ "$PROJECT" = "(unset)" ]; then
   echo "No GCP project set. Run: gcloud config set project <project-id>" >&2
@@ -34,7 +35,7 @@ gcloud run deploy "$SERVICE" \
   --min-instances 0 \
   --max-instances 4 \
   --timeout 60s \
-  --set-env-vars "NODE_ENV=production,GCS_BUCKET=${GCS_BUCKET:-},TICK_SECRET=${TICK_SECRET:-}"
+  --set-env-vars "NODE_ENV=production,GCS_BUCKET=${BUCKET},TICK_SECRET=${TICK_SECRET:-},CAMPAIGN_WALLET=${CAMPAIGN_WALLET:-}"
 
 URL="$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" --format='value(status.url)')"
 echo
@@ -47,14 +48,6 @@ echo "Health: $(curl -fsS "$URL/healthz" || echo 'FAILED')"
 # every submission is held forever; without a secret the payout endpoint
 # refuses to run at all, which is the correct choice but looks like nothing
 # happening.
-if [ -z "${GCS_BUCKET:-}" ]; then
-  echo
-  echo "WARNING: GCS_BUCKET unset — campaign state is in-memory and dies with the" >&2
-  echo "         instance. The 24h dwell window can never be satisfied. Create one:" >&2
-  echo "           gsutil mb -p $PROJECT gs://$SERVICE-state" >&2
-  echo "           GCS_BUCKET=$SERVICE-state ./deploy.sh" >&2
-fi
-
 if [ -z "${TICK_SECRET:-}" ]; then
   echo
   echo "WARNING: TICK_SECRET unset — /api/tick returns 503 and no payouts run." >&2
