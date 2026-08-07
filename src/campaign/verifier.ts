@@ -37,7 +37,29 @@ import type { ClipVerifier } from './verify';
 export const DEFAULT_VERIFIER_MODEL = 'gemini-3-flash-preview';
 
 export interface VerifierOptions {
-  apiKey: string;
+  /** Gemini Developer API key. Omit when using Vertex. */
+  apiKey?: string;
+  /**
+   * Route through Vertex AI instead of the Developer API.
+   *
+   * The two have separate billing. The Developer API runs on **prepaid
+   * credits** bought in AI Studio, which is a different pot from a Google
+   * Cloud billing account — so a project with billing linked and no credits
+   * returns 429 RESOURCE_EXHAUSTED however healthy the Cloud account is.
+   * Vertex bills the Cloud account directly, which is usually the one that
+   * already has a payment method on it.
+   *
+   * The cost is authentication: Vertex uses Application Default Credentials
+   * rather than an API key, so it needs `gcloud auth application-default
+   * login` once — and on Cloud Run, nothing at all, because the instance's own
+   * service account authenticates. That is one fewer secret in the deployment
+   * than an API key in an env var.
+   *
+   * Location defaults to `global`. Since 1 July 2026 Vertex charges roughly
+   * 10% more on regional endpoints, and we have no data-residency requirement
+   * to spend it on.
+   */
+  vertex?: { project: string; location?: string };
   model?: string;
   /** Low unless told otherwise: about a third the tokens, ample for a brief. */
   highResolution?: boolean;
@@ -94,7 +116,13 @@ export class GeminiClipVerifier implements ClipVerifier {
   private readonly log: (line: string) => void;
 
   constructor(private readonly options: VerifierOptions) {
-    this.ai = new GoogleGenAI({ apiKey: options.apiKey });
+    this.ai = options.vertex
+      ? new GoogleGenAI({
+          vertexai: true,
+          project: options.vertex.project,
+          location: options.vertex.location ?? 'global',
+        })
+      : new GoogleGenAI({ apiKey: options.apiKey });
     this.model = options.model ?? DEFAULT_VERIFIER_MODEL;
     this.log = options.log ?? (() => {});
   }
@@ -172,11 +200,23 @@ export class GeminiClipVerifier implements ClipVerifier {
 export function verifierFromEnv(
   env: Record<string, string | undefined> = Bun.env,
 ): GeminiClipVerifier | undefined {
-  const apiKey = (env.GOOGLE_API_KEY ?? env.GEMINI_API_KEY)?.trim();
-  if (!apiKey) return undefined;
-  return new GeminiClipVerifier({
-    apiKey,
+  const shared = {
     model: env.LLM_MODEL,
     highResolution: env.VERIFIER_HIGH_RES === 'true',
-  });
+  };
+
+  // Vertex first when asked for: it bills the Cloud account, which is the one
+  // that usually already has a payment method, rather than the Developer API's
+  // separate prepaid credits.
+  const project = env.GOOGLE_CLOUD_PROJECT?.trim();
+  if (env.GOOGLE_GENAI_USE_VERTEXAI === 'true' && project) {
+    return new GeminiClipVerifier({
+      ...shared,
+      vertex: { project, location: env.GOOGLE_CLOUD_LOCATION?.trim() || 'global' },
+    });
+  }
+
+  const apiKey = (env.GOOGLE_API_KEY ?? env.GEMINI_API_KEY)?.trim();
+  if (!apiKey) return undefined;
+  return new GeminiClipVerifier({ ...shared, apiKey });
 }

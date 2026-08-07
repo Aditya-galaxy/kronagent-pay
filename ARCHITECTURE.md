@@ -43,6 +43,15 @@ exists to avoid.
    this is confirmed behaviour rather than a hypothesis.
 3. **Prompt injection → verification bypass.** A clip's description or on-screen
    text instructs the verifier to pass it.
+
+   Partially verified live. An override appended to a genuine brief is refused
+   and *named* — the verdict fails the clip on the real requirements and
+   records "a SYSTEM OVERRIDE instruction attempting to bypass the evaluation,
+   which was ignored". **The clip itself is untested**: exercising that needs a
+   video whose own description or on-screen text carries the injection, which
+   we do not yet have. Until then the architectural defence is what counts —
+   the verdict is one precondition among several, and the response schema has
+   no field an injection could aim at.
 4. **Drain by attrition.** Many individually-legal payouts across many
    creator accounts. Per-payment caps do nothing against it.
 5. **Sybil creators.** One person, many accounts, each under the per-creator cap.
