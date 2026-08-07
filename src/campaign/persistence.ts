@@ -30,10 +30,21 @@ import type { CampaignStore } from './store';
 
 export const STATE_VERSION = 1;
 
-/** A key/value blob store. The only thing the persistence layer needs. */
+/**
+ * A key/value blob store.
+ *
+ * `list` and `putIfAbsent` exist for the event log. `putIfAbsent` is the
+ * important one: it turns a duplicate write into a detectable no-op rather
+ * than a silent overwrite, which is what makes a deterministic event id an
+ * actual idempotency guarantee rather than a convention.
+ */
 export interface BlobStore {
   get(key: string): Promise<string | undefined>;
   put(key: string, value: string): Promise<void>;
+  /** Keys under `prefix`, in lexicographic order. */
+  list(prefix: string): Promise<string[]>;
+  /** Returns false when the key already existed. Never overwrites. */
+  putIfAbsent(key: string, value: string): Promise<boolean>;
 }
 
 type State = ReturnType<CampaignStore['exportState']>;
@@ -140,14 +151,33 @@ export class MemoryBlobStore implements BlobStore {
   async put(key: string, value: string): Promise<void> {
     this.blobs.set(key, value);
   }
+
+  async list(prefix: string): Promise<string[]> {
+    return [...this.blobs.keys()].filter((k) => k.startsWith(prefix)).sort();
+  }
+
+  async putIfAbsent(key: string, value: string): Promise<boolean> {
+    if (this.blobs.has(key)) return false;
+    this.blobs.set(key, value);
+    return true;
+  }
 }
 
-/** Local disk. What `bun run src/server.ts` uses. */
+/**
+ * Local disk. What `bun run src/server.ts` uses.
+ *
+ * Filenames are `encodeURIComponent(key)` — flat, and **reversible**. An
+ * earlier version replaced every awkward character with `_`, which is fine
+ * until you have to `list()`: `events/a.json` and `events_a.json` both become
+ * the same filename and neither can be turned back into a key. Lossy encoding
+ * is survivable for a store you only ever read by exact key, and a bug the
+ * moment you enumerate one.
+ */
 export class FileBlobStore implements BlobStore {
   constructor(private readonly directory: string) {}
 
   private path(key: string): string {
-    return `${this.directory}/${key.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+    return `${this.directory}/${encodeURIComponent(key)}`;
   }
 
   async get(key: string): Promise<string | undefined> {
@@ -157,6 +187,27 @@ export class FileBlobStore implements BlobStore {
 
   async put(key: string, value: string): Promise<void> {
     await Bun.write(this.path(key), value);
+  }
+
+  async list(prefix: string): Promise<string[]> {
+    const glob = new Bun.Glob('*');
+    const found: string[] = [];
+    for await (const name of glob.scan({ cwd: this.directory, onlyFiles: true })) {
+      let key: string;
+      try {
+        key = decodeURIComponent(name);
+      } catch {
+        continue; // not ours
+      }
+      if (key.startsWith(prefix)) found.push(key);
+    }
+    return found.sort();
+  }
+
+  async putIfAbsent(key: string, value: string): Promise<boolean> {
+    if (await Bun.file(this.path(key)).exists()) return false;
+    await Bun.write(this.path(key), value);
+    return true;
   }
 }
 
@@ -206,16 +257,69 @@ export class GcsBlobStore implements BlobStore {
   }
 
   async put(key: string, value: string): Promise<void> {
+    await this.upload(key, value);
+  }
+
+  async list(prefix: string): Promise<string[]> {
     const token = await this.accessToken();
-    const url =
-      `https://storage.googleapis.com/upload/storage/v1/b/${this.bucket}/o` +
-      `?uploadType=media&name=${encodeURIComponent(key)}`;
-    const response = await this.fetchImpl(url, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: value,
-    });
+    const keys: string[] = [];
+    let pageToken: string | undefined;
+
+    do {
+      const params = new URLSearchParams({ prefix, maxResults: '1000' });
+      if (pageToken) params.set('pageToken', pageToken);
+      const response = await this.fetchImpl(
+        `https://storage.googleapis.com/storage/v1/b/${this.bucket}/o?${params}`,
+        { headers: { authorization: `Bearer ${token}` } },
+      );
+      if (!response.ok) throw new Error(`GCS list failed: ${response.status}`);
+      const body = (await response.json()) as {
+        items?: { name: string }[];
+        nextPageToken?: string;
+      };
+      for (const item of body.items ?? []) keys.push(item.name);
+      pageToken = body.nextPageToken;
+      // Paging matters: a busy campaign passes 1,000 events quickly, and a
+      // silently truncated list would replay to a state missing its tail.
+    } while (pageToken);
+
+    return keys.sort();
+  }
+
+  /**
+   * Create only if absent, using GCS's own precondition.
+   *
+   * `ifGenerationMatch=0` means "this object must not exist", enforced by the
+   * storage layer rather than by a read-then-write we could lose a race on.
+   * A duplicate returns 412 and this returns false — which is what turns a
+   * deterministic event id into an actual guarantee.
+   */
+  async putIfAbsent(key: string, value: string): Promise<boolean> {
+    const response = await this.upload(key, value, { ifGenerationMatch: '0' });
+    return response !== 'exists';
+  }
+
+  private async upload(
+    key: string,
+    value: string,
+    options: { ifGenerationMatch?: string } = {},
+  ): Promise<'written' | 'exists'> {
+    const token = await this.accessToken();
+    const params = new URLSearchParams({ uploadType: 'media', name: key });
+    if (options.ifGenerationMatch !== undefined) {
+      params.set('ifGenerationMatch', options.ifGenerationMatch);
+    }
+    const response = await this.fetchImpl(
+      `https://storage.googleapis.com/upload/storage/v1/b/${this.bucket}/o?${params}`,
+      {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: value,
+      },
+    );
+    if (response.status === 412) return 'exists';
     if (!response.ok) throw new Error(`GCS write failed: ${response.status}`);
+    return 'written';
   }
 }
 

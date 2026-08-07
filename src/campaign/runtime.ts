@@ -25,10 +25,11 @@ import {
   FileBlobStore,
   GcsBlobStore,
   MemoryBlobStore,
-  loadInto,
   type BlobStore,
 } from './persistence';
+import { EventLog } from './eventlog';
 import { CampaignStore } from './store';
+import { apply as applyEvent } from './eventlog';
 import { MemoryTrackingStore, previewClip, verifyClip } from './verify';
 import type { ClipVerifier, CountOracle } from './verify';
 import { CircleCliExecutor } from './executor';
@@ -76,6 +77,7 @@ export class CampaignRuntime {
   readonly gate: PayoutGate;
   readonly mandates: MandateStore;
   private readonly blobs: BlobStore;
+  private readonly log: EventLog;
   private readonly oracle: ViewOracle;
   private readonly executor: PayoutExecutor;
   private readonly env: Record<string, string | undefined>;
@@ -89,6 +91,7 @@ export class CampaignRuntime {
   constructor(options: CampaignRuntimeOptions = {}) {
     this.env = options.env ?? Bun.env;
     this.blobs = options.blobs ?? chooseBlobStore(this.env);
+    this.log = new EventLog(this.blobs);
     this.oracle = options.oracle ?? NULL_ORACLE;
     // With a wallet configured, settlement goes through the real CLI — in
     // estimate mode unless mainnet is explicitly armed, so the path is
@@ -120,11 +123,28 @@ export class CampaignRuntime {
     );
   }
 
-  /** Hydrate from durable storage. Idempotent, so every route may call it. */
+  /** Replay the log into the store. Idempotent, so every route may call it. */
   async ready(): Promise<void> {
     if (this.loaded) return;
-    await loadInto(this.store, this.blobs);
+    await this.log.hydrate(this.store);
     this.loaded = true;
+  }
+
+  /**
+   * Record a fact and apply it.
+   *
+   * The only supported way to change campaign state: the log is the source of
+   * truth, and an in-memory mutation nobody wrote down dies with the instance.
+   */
+  async record(event: Parameters<EventLog['append']>[0], at: Date = new Date()): Promise<boolean> {
+    const written = await this.log.append(event, at);
+    if (written) applyEvent(this.store, event);
+    return written;
+  }
+
+  /** The chain, recomputed from the events. Anyone can check this. */
+  async chain() {
+    return this.log.chain();
   }
 
   async tick(now?: Date): Promise<TickResult> {
@@ -135,7 +155,7 @@ export class CampaignRuntime {
         gate: this.gate,
         oracle: this.oracle,
         executor: this.executor,
-        blobs: this.blobs,
+        log: this.log,
       },
       { agentId: this.env.AGENT_ID ?? 'campaign-agent', now },
     );
