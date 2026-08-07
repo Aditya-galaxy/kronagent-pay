@@ -127,7 +127,12 @@ export class GeminiClipVerifier implements ClipVerifier {
     this.log = options.log ?? (() => {});
   }
 
-  async judge(input: { url: string; brief: string }): Promise<{
+  async judge(input: {
+    url: string;
+    brief: string;
+    /** Raw video, for a submission that is not a public URL. */
+    inline?: { data: string; mimeType: string };
+  }): Promise<{
     pass: boolean;
     reasons: string[];
     confidence: number;
@@ -140,8 +145,11 @@ export class GeminiClipVerifier implements ClipVerifier {
           role: 'user',
           parts: [
             // Gemini fetches YouTube URLs directly, so nothing is downloaded,
-            // stored or re-hosted by us. The clip stays where the creator put it.
-            { fileData: { fileUri: input.url, mimeType: 'video/*' } },
+            // stored or re-hosted by us. The clip stays where the creator put
+            // it. Inline bytes are the alternative when there is no public URL.
+            input.inline
+              ? { inlineData: { mimeType: input.inline.mimeType, data: input.inline.data } }
+              : { fileData: { fileUri: input.url, mimeType: 'video/*' } },
             {
               text:
                 `<brief source="campaign operator">\n${input.brief}\n</brief>\n\n` +
