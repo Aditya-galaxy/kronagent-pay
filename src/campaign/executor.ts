@@ -20,16 +20,20 @@
  *
  * Two flags do real work here:
  *
- * **`--idempotency-key`** receives the intent id, which `tick.ts` derives as
- * `pay-<submission>-<confirmed views>`. That is deterministic, so a crash
- * between settling and persisting cannot pay the same views twice — the retry
- * presents the same key. This is the one window the tick could not close on
- * its own.
+ * **`--idempotency-key`** must be a **UUID** — Circle rejects anything else
+ * with `400 Invalid request body`, which is worth stating because our intent
+ * ids are readable strings and passing one straight through silently disabled
+ * the very guarantee the flag exists for. `idempotencyUuid` hashes the intent
+ * id into a valid UUID instead, so the value stays deterministic: the same
+ * submission at the same confirmed view count always produces the same key,
+ * and a retry after a crash is refused rather than paying twice.
  *
  * **`--estimate`** is what dry-run uses. It exercises the real CLI, the real
  * wallet and the real chain and stops short of broadcasting, so a dry run
  * proves the path works rather than asserting it would.
  */
+
+import { createHash } from 'node:crypto';
 
 import type { PaymentOutcome } from '../schemas';
 import type { Chain } from '../schemas';
@@ -71,6 +75,23 @@ const EXPLORER: Record<Chain, string> = {
   'polygon-amoy': 'https://amoy.polygonscan.com/tx/',
   polygon: 'https://polygonscan.com/tx/',
 };
+
+/**
+ * A deterministic UUID from an arbitrary string.
+ *
+ * Shaped like UUIDv5 — SHA-256 over the name, with the version and variant
+ * bits set — because Circle wants a UUID and we need the *same* one every time
+ * for a given payout. A random key would satisfy the format and destroy the
+ * property.
+ */
+export function idempotencyUuid(name: string): string {
+  const h = createHash('sha256').update(name).digest();
+  const b = Buffer.from(h.subarray(0, 16));
+  b[6] = (b[6]! & 0x0f) | 0x50; // version 5
+  b[8] = (b[8]! & 0x3f) | 0x80; // RFC 4122 variant
+  const hex = b.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 export interface CommandResult {
   code: number;
@@ -159,7 +180,7 @@ export class CircleCliExecutor implements PayoutExecutor {
       '--chain',
       CLI_CHAIN[chain],
       '--idempotency-key',
-      intentId,
+      idempotencyUuid(intentId),
       '--output',
       'json',
     ];

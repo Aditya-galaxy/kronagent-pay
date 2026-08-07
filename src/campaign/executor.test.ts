@@ -10,7 +10,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { Decimal } from '../decimal';
-import { CircleCliExecutor, extractTxHash, type CommandRunner } from './executor';
+import { CircleCliExecutor, extractTxHash, idempotencyUuid, type CommandRunner } from './executor';
 import type { PayoutDecision } from './payout';
 import type { Campaign, Creator } from './types';
 
@@ -73,13 +73,25 @@ describe('the command it builds', () => {
     expect(args[args.indexOf('--address') + 1]).toBe('0xfrom');
   });
 
-  test('the idempotency key is the deterministic intent id', async () => {
-    // This is what makes a crash between settling and persisting safe: the
-    // retry presents the same key rather than paying the same views again.
+  test('the idempotency key is a UUID, not the raw intent id', async () => {
+    // Circle rejects a non-UUID with `400 Invalid request body`. Passing the
+    // readable intent id straight through silently disabled the guarantee the
+    // flag exists for — every settlement failed, and idempotency with it.
     const { calls, runner } = spy();
     await send(new CircleCliExecutor({ fromAddress: '0xfrom', dryRun: false, runner }));
     const args = calls[0]!;
-    expect(args[args.indexOf('--idempotency-key') + 1]).toBe('pay-sub-1-2000');
+    const key = args[args.indexOf('--idempotency-key') + 1]!;
+    expect(key).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(key).not.toBe('pay-sub-1-2000');
+  });
+
+  test('the same payout always produces the same key, a different one does not', async () => {
+    // Determinism is the whole point — a random UUID would satisfy the format
+    // and destroy the property. Verified live: replaying an identical payout
+    // returned the same tx hash rather than sending twice.
+    expect(idempotencyUuid('pay-sub-1-2000')).toBe(idempotencyUuid('pay-sub-1-2000'));
+    expect(idempotencyUuid('pay-sub-1-2000')).not.toBe(idempotencyUuid('pay-sub-1-2001'));
+    expect(idempotencyUuid('pay-sub-1-2000')).not.toBe(idempotencyUuid('pay-sub-2-2000'));
   });
 
   test('mainnet uses the mainnet token and explorer', async () => {
