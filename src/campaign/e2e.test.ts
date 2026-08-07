@@ -36,6 +36,19 @@ const GEMINI = (Bun.env.GOOGLE_API_KEY ?? Bun.env.GEMINI_API_KEY)?.trim();
 const YT = Bun.env.YOUTUBE_API_KEY?.trim();
 const LIVE = Boolean(GEMINI && YT);
 
+/**
+ * Live tests are opt-in.
+ *
+ * They call Gemini on real video, which costs real money and takes about a
+ * minute each. Running them on every `bun test` made the default suite take
+ * three minutes, spend money on every save, and — because Bun runs files in
+ * parallel — time out when several video calls competed. A suite with those
+ * properties stops being run, which is worse than one that skips.
+ *
+ *     LIVE_TESTS=1 bun test src/campaign/live.test.ts
+ */
+const OPT_IN = Bun.env.LIVE_TESTS === '1';
+
 const VIDEO = Bun.env.LIVE_TEST_VIDEO ?? 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
 const CREATOR_WALLET = '0x93cbeb87353fe349815fcbc1776bc156e1e8f6fb';
 
@@ -91,7 +104,7 @@ function world(over: Partial<Campaign> = {}) {
   return { store, log, gate, campaign: campaign(over) };
 }
 
-describe.skipIf(!LIVE)('a campaign, end to end, with real services', () => {
+describe.skipIf(!OPT_IN || !LIVE)('a campaign, end to end, with real services', () => {
   test('a clip that meets the brief is verified, counted, and settles', async () => {
     const { store, log, gate, campaign: camp } = world();
     const verifier = verifierFromEnv()!;
@@ -241,7 +254,7 @@ describe.skipIf(!LIVE)('a campaign, end to end, with real services', () => {
   }, 180_000);
 });
 
-describe.skipIf(!Bun.env.CAMPAIGN_WALLET)('settlement against the real Circle CLI', () => {
+describe.skipIf(!OPT_IN || !Bun.env.CAMPAIGN_WALLET)('settlement against the real Circle CLI', () => {
   test('an unfunded wallet fails the estimate and records no payout', async () => {
     // Proves the whole failure path with nothing mocked: real CLI, real wallet,
     // real chain. The revert is the wallet having no USDC — and the executor

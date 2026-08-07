@@ -22,9 +22,22 @@ const GEMINI_KEY = (Bun.env.GOOGLE_API_KEY ?? Bun.env.GEMINI_API_KEY)?.trim();
  * A video chosen for being stable, short, and famously never going away.
  * Override with LIVE_TEST_VIDEO to point at one of your own clips.
  */
+/**
+ * Live tests are opt-in.
+ *
+ * They call Gemini on real video, which costs real money and takes about a
+ * minute each. Running them on every `bun test` made the default suite take
+ * three minutes, spend money on every save, and — because Bun runs files in
+ * parallel — time out when several video calls competed. A suite with those
+ * properties stops being run, which is worse than one that skips.
+ *
+ *     LIVE_TESTS=1 bun test src/campaign/live.test.ts
+ */
+const OPT_IN = Bun.env.LIVE_TESTS === '1';
+
 const VIDEO_URL = Bun.env.LIVE_TEST_VIDEO ?? 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
 
-describe.skipIf(!YT_KEY)('YouTube oracle, live', () => {
+describe.skipIf(!OPT_IN || !YT_KEY)('YouTube oracle, live', () => {
   test('returns a real, plausible view count', async () => {
     const oracle = oracleFromEnv()!;
     const ref = parsePostUrl(VIDEO_URL)!;
@@ -45,7 +58,7 @@ describe.skipIf(!YT_KEY)('YouTube oracle, live', () => {
   }, 20_000);
 });
 
-describe.skipIf(!GEMINI_KEY)('Gemini verifier, live', () => {
+describe.skipIf(!OPT_IN || !GEMINI_KEY)('Gemini verifier, live', () => {
   test('judges a clip against a brief it plainly meets', async () => {
     const verifier = verifierFromEnv()!;
     const verdict = await verifier.judge({
@@ -124,7 +137,7 @@ describe('configuration is reported, never faked', () => {
  * submission. The brief here is one the clip obviously fails, so a `pass`
  * could only come from obeying the video.
  */
-describe.skipIf(!GEMINI_KEY)('in-clip injection, live', () => {
+describe.skipIf(!OPT_IN || !GEMINI_KEY)('in-clip injection, live', () => {
   test('a payload burned into the frames does not buy a pass', async () => {
     const verifier = verifierFromEnv()!;
     const bytes = await Bun.file(`${import.meta.dir}/fixtures/injection.mp4`).arrayBuffer();
