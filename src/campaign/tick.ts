@@ -19,12 +19,13 @@
  * tick would treat those views as already paid. The creator would simply never
  * be paid for them, silently.
  *
- * **State is persisted after each settlement, not at the end of the tick.**
- * A crash between paying and persisting is the one window where a restart
- * could pay twice. Narrowing it to a single payout is worth the extra writes,
- * and the intent id is derived from the submission and its confirmed view
- * count — `pay-<submission>-<views>` — so a settlement layer that dedupes on
- * intent id closes the window entirely.
+ * **Each fact is appended to the log as it becomes true**, not batched at the
+ * end of the tick. The log is one object per event with a create-only
+ * precondition, so two concurrent passes cannot overwrite each other and a
+ * retry after a crash writes the same key and is refused. The event id for a
+ * payout is the same `pay-<submission>-<views>` the executor passes as
+ * `--idempotency-key`, so both sides of the boundary dedupe on the same
+ * value.
  *
  * **One submission's failure never aborts the tick.** An oracle timing out on
  * a single clip must not stop every other creator getting paid. It also must
@@ -35,8 +36,7 @@
 import { Decimal } from '../decimal';
 import type { PaymentOutcome } from '../schemas';
 import type { PayoutDecision, PayoutGate } from './payout';
-import type { BlobStore } from './persistence';
-import { saveFrom } from './persistence';
+import type { EventLog } from './eventlog';
 import type { CampaignStore } from './store';
 import type { Campaign, Creator, Submission } from './types';
 
@@ -65,7 +65,7 @@ export interface TickDeps {
   gate: PayoutGate;
   oracle: ViewOracle;
   executor: PayoutExecutor;
-  blobs?: BlobStore;
+  log?: EventLog;
   sink?: DecisionSink;
 }
 
@@ -88,7 +88,7 @@ export async function runTick(
   options: { agentId: string; now?: Date } = { agentId: 'campaign-agent' },
 ): Promise<TickResult> {
   const now = options.now ?? new Date();
-  const { store, gate, oracle, executor, blobs, sink } = deps;
+  const { store, gate, oracle, executor, log, sink } = deps;
 
   const decisions: PayoutDecision[] = [];
   const errors: string[] = [];
@@ -115,12 +115,16 @@ export async function runTick(
       try {
         const views = await oracle.fetch(submission);
         if (views !== undefined) {
-          store.addSnapshot({
+          const snapshot = {
             submissionId: submission.submissionId,
             views,
             fetchedAt: now.toISOString(),
             source: submission.platform,
-          });
+          };
+          // Durable first, in-memory second. A snapshot only this process knows
+          // about is a dwell window that dies with the instance.
+          await log?.append({ type: 'snapshot_taken', snapshot }, now);
+          store.addSnapshot(snapshot);
         }
 
         const decision = gate.decide(submission.submissionId, { agentId: options.agentId, now });
@@ -150,8 +154,10 @@ export async function runTick(
           continue;
         }
 
-        store.recordPayout({
-          payoutId: `po-${submission.submissionId}-${decision.confirmedViews}`,
+        const settled = {
+          // Same id the executor passed as --idempotency-key, so a retry after
+          // a crash writes to the same key and is refused rather than doubled.
+          payoutId: `pay-${submission.submissionId}-${decision.confirmedViews}`,
           submissionId: submission.submissionId,
           campaignId: campaign.campaignId,
           creatorId: creator.creatorId,
@@ -160,21 +166,17 @@ export async function runTick(
           at: now.toISOString(),
           txHash: outcome.txHash,
           explorerUrl: outcome.explorerUrl,
-        });
+        };
+        await log?.append({ type: 'payout_settled', payout: settled }, now);
+        store.recordPayout(settled);
         paid += 1;
         total = total.plus(decision.amountUsdc);
-
-        // Persist per payout, not per tick: this is the only window in which a
-        // crash could pay the same views twice.
-        if (blobs) await saveFrom(store, blobs);
       } catch (error) {
         // One clip's oracle timing out must not stop everyone else being paid.
         errors.push(`${submission.submissionId}: ${(error as Error).message}`);
       }
     }
   }
-
-  if (blobs) await saveFrom(store, blobs);
 
   return {
     startedAt: now.toISOString(),

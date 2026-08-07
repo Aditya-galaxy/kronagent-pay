@@ -15,7 +15,8 @@ import { PaymentPolicyEngine } from '../policy';
 import { CampaignStore } from './store';
 import { PayoutGate } from './payout';
 import { termsFor } from './terms';
-import { MemoryBlobStore, loadInto } from './persistence';
+import { MemoryBlobStore } from './persistence';
+import { EventLog } from './eventlog';
 import { DryRunExecutor, runTick } from './tick';
 import type { PayoutExecutor, ViewOracle } from './tick';
 import type { Campaign, Submission } from './types';
@@ -220,15 +221,20 @@ describe('when something goes wrong', () => {
 describe('durability', () => {
   test('a tick persists, and a fresh store resumes without double paying', async () => {
     const blobs = new MemoryBlobStore();
+    const log = new EventLog(blobs);
     const first = world(['a']);
+    // The campaign itself has to be on the log too, or a replay has nothing.
+    await log.append({ type: 'campaign_upserted', campaign: campaign() });
+    await log.append({ type: 'creator_upserted', creator: { creatorId: 'cre-a', payoutAddress: '0xa', handles: {} } });
+    await log.append({ type: 'submission_accepted', submission: submission('a') });
     await runTick(
-      { ...first, oracle: oracleReturning(3_000n), executor: new DryRunExecutor(), blobs },
+      { ...first, oracle: oracleReturning(3_000n), executor: new DryRunExecutor(), log },
       { agentId: 'agent', now: NOW },
     );
 
     // A new instance, as Cloud Run would give us after scaling to zero.
     const restored = new CampaignStore();
-    expect(await loadInto(restored, blobs)).toBe(true);
+    await log.hydrate(restored);
     expect(restored.viewsPaidTo('a')).toBe(1_000n);
     expect(restored.spentOnCampaign('camp-1').toString()).toBe('1');
   });
