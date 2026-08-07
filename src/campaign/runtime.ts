@@ -33,6 +33,8 @@ import { apply as applyEvent } from './eventlog';
 import { MemoryTrackingStore, previewClip, verifyClip } from './verify';
 import type { ClipVerifier, CountOracle } from './verify';
 import { CircleCliExecutor } from './executor';
+import { oracleFromEnv } from './oracle';
+import { verifierFromEnv } from './verifier';
 import { DryRunExecutor, runTick, type PayoutExecutor, type TickResult, type ViewOracle } from './tick';
 
 /** No oracle configured yet: report "cannot tell", never a fabricated count. */
@@ -92,7 +94,9 @@ export class CampaignRuntime {
     this.env = options.env ?? Bun.env;
     this.blobs = options.blobs ?? chooseBlobStore(this.env);
     this.log = new EventLog(this.blobs);
-    this.oracle = options.oracle ?? NULL_ORACLE;
+    // The tick's view source is the same YouTube oracle the paid endpoint
+    // uses; NULL_ORACLE only when no key is configured.
+    this.oracle = options.oracle ?? oracleFromEnv(this.env) ?? NULL_ORACLE;
     // With a wallet configured, settlement goes through the real CLI — in
     // estimate mode unless mainnet is explicitly armed, so the path is
     // exercised end to end before it can move anything.
@@ -105,8 +109,10 @@ export class CampaignRuntime {
           })
         : new DryRunExecutor());
     this.mandates = options.mandates ?? new MandateStore();
-    this.counts = options.counts;
-    this.verifier = options.verifier;
+    // Real when the keys are present, absent otherwise — never a stub that
+    // answers zero or always passes. Every consumer reports the absence.
+    this.counts = options.counts ?? oracleFromEnv(this.env);
+    this.verifier = options.verifier ?? verifierFromEnv(this.env);
 
     this.gate = new PayoutGate(
       this.store,
@@ -175,6 +181,10 @@ export class CampaignRuntime {
     return {
       persistence: this.blobs.constructor.name,
       ephemeral: this.blobs instanceof MemoryBlobStore,
+      // Stated rather than discovered: a campaign with no verifier holds every
+      // clip on `no_verdict`, and one with no oracle never confirms a view.
+      verifier: this.verifier ? 'gemini' : 'not configured (GOOGLE_API_KEY)',
+      viewOracle: this.counts ? 'youtube' : 'not configured (YOUTUBE_API_KEY)',
       campaigns: state.campaigns.map((c) => ({
         campaignId: c.campaignId,
         brief: c.brief,
