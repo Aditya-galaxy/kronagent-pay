@@ -160,10 +160,18 @@ They are deliberately separate. Conflated, the only way to settle a real *testne
 
 ## Pre-existing work, disclosed
 
-Per the competition's *New Projects Only* requirement:
+Per the competition's *New Projects Only* requirement. Two of these are things a judge would find in the git history regardless, and finding them unmentioned would be worse than reading them here.
 
-- **This project was created on 2026-08-04**, inside the submission period. Every line of source here is new.
+- **This project was created on 2026-08-04**, inside the submission period. Every line of source is new.
+
+- **It pivoted on 2026-08-05, in the open.** The first day's commits build a hard spend limit for AI agents. The campaign payout engine lands the next day, and the product became what it is now. That early history — and the original landing copy — is still in the log, still describing the old thing. This is not an older project repurposed to fit the brief; it is one week of work changing its mind after the research said the first idea was a vitamin rather than a painkiller. The decision layer written on day one survives underneath: `PaymentPolicyEngine`, the mandates and the rolling budget are the same code, now governing campaign payouts instead of agent API spend.
+
+- **The repository was renamed on 2026-08-08**, `kronagent-payouts` → `merlinclips`, when the domain was registered. Same repository, same history — the rename changed names and URLs and nothing else.
+
 - **[Circle Agent Stack starter kits](https://github.com/circlefin/agent-stack-starter-kits)** (Apache-2.0) — we build on the `google-adk` kit's tool definitions and its `ApprovalFn` seam. We replace its terminal-prompt approval implementation; we do not vendor its code.
+
+- **The `circle` CLI and Circle's published skills** are used as tooling. Settlement shells out to the CLI rather than reimplementing its wallet handling — a dependency, not vendored source.
+
 - **[Kronagent](https://github.com/Aditya-galaxy/Kronagent)**, by the same author, is a cloud threat-defense platform with an earn-trust governance model for autonomous containment actions. **Its design informed this project** — the fail-closed policy ordering, expiring delegated authority, and hash-chained audit. **No code was copied**; this is an independent implementation in a different language for a different domain (irreversible payments rather than reversible containment).
 
 ## Documentation
