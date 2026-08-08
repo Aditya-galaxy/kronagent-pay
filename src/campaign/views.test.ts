@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import fc from 'fast-check';
 
 import { Decimal } from '../decimal';
 import { confirmedViews, earningsFor, hasDwelled, payableViews } from './views';
@@ -100,5 +101,86 @@ describe('what is still owed', () => {
 
   test('paying twice for the same views is impossible', () => {
     expect(payableViews(3_000n, 3_000n)).toBe(0n);
+  });
+});
+
+/* ─────────────── survival means the whole window, not its ends ─────────────── */
+
+describe('a count that dipped inside the window did not survive it', () => {
+  const DWELL = 86_400_000;
+  const NOW = new Date('2026-08-05T12:00:00.000Z');
+  const at = (hoursAgo: number, views: bigint): Snapshot => ({
+    submissionId: 'sub',
+    views,
+    source: 'youtube',
+    fetchedAt: new Date(NOW.getTime() - hoursAgo * 3_600_000).toISOString(),
+  });
+
+  test('a mid-window scrub to zero confirms nothing', () => {
+    // The defect this replaces. Comparing only the anchor to the newest count
+    // asks "were there this many then, and this many now" — which a count
+    // scrubbed to zero in between answers yes to. The platform destroyed every
+    // one of those views and the system paid for all of them.
+    expect(
+      confirmedViews([at(25, 10_000n), at(12, 0n), at(1, 10_000n)], { dwellMs: DWELL, now: NOW }),
+    ).toBe(0n);
+  });
+
+  test('a partial dip confirms only what was never absent', () => {
+    expect(
+      confirmedViews([at(25, 10_000n), at(12, 5_000n), at(1, 10_000n)], { dwellMs: DWELL, now: NOW }),
+    ).toBe(5_000n);
+  });
+
+  test('re-inflating right before the check earns nothing extra', () => {
+    // Buy views, get scrubbed, buy again. Two sets of bought views, neither of
+    // which survived a day.
+    const history = [at(25, 50_000n), at(18, 200n), at(9, 40_000n), at(1, 50_000n)];
+    expect(confirmedViews(history, { dwellMs: DWELL, now: NOW })).toBe(200n);
+  });
+
+  test('a dip stops mattering once a clean window has passed', () => {
+    // Suppression lasts one dwell window, not forever. An honest creator whose
+    // count glitched is not punished permanently — the anchor advances past
+    // the dip, and views that genuinely held afterwards are paid normally.
+    const later = new Date(NOW.getTime() + 26 * 3_600_000);
+    const history = [
+      at(25, 10_000n), at(12, 0n), at(1, 10_000n), at(-13, 10_000n), at(-25, 10_000n),
+    ];
+    expect(confirmedViews(history, { dwellMs: DWELL, now: later })).toBe(10_000n);
+  });
+
+  test('growth after the anchor is never punished', () => {
+    // Only *falling* below the anchor suppresses. Climbing is normal.
+    expect(
+      confirmedViews([at(25, 1_000n), at(12, 4_000n), at(1, 9_000n)], { dwellMs: DWELL, now: NOW }),
+    ).toBe(1_000n);
+  });
+
+  test('confirmed never exceeds any observation in the window, for any history', () => {
+    // The property no generator was producing: every existing case grew
+    // monotonically, so the whole class of scrub-and-recover histories went
+    // untested and the defect survived 328 passing tests.
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.tuple(fc.integer({ min: 0, max: 72 }), fc.bigInt({ min: 0n, max: 10n ** 9n })),
+          { minLength: 2, maxLength: 10 },
+        ),
+        (rows) => {
+          const snaps = rows.map(([h, v]) => at(h, v));
+          const confirmed = confirmedViews(snaps, { dwellMs: DWELL, now: NOW });
+          if (confirmed === 0n) return;
+          const cutoff = NOW.getTime() - DWELL;
+          // Find the anchor the implementation would have chosen.
+          const aged = snaps.filter((s) => Date.parse(s.fetchedAt) <= cutoff);
+          const anchorMs = Math.max(...aged.map((s) => Date.parse(s.fetchedAt)));
+          for (const s of snaps) {
+            if (Date.parse(s.fetchedAt) >= anchorMs) expect(confirmed).toBeLessThanOrEqual(s.views);
+          }
+        },
+      ),
+      { numRuns: 500 },
+    );
   });
 });

@@ -48,23 +48,46 @@ export function confirmedViews(
   const nowMs = (options.now ?? new Date()).getTime();
   const cutoff = nowMs - options.dwellMs;
 
-  let latest: Snapshot | undefined;
   let latestAged: Snapshot | undefined;
+  let latestAgedMs = -Infinity;
 
+  // The anchor: the most recent count old enough to have settled. Everything
+  // at or after it is the window we have to be satisfied with.
   for (const snapshot of snapshots) {
     const atMs = Date.parse(snapshot.fetchedAt);
     // An unparseable timestamp cannot be placed on either side of the dwell
     // window, and guessing would let a malformed record authorize a payout.
     if (Number.isNaN(atMs)) continue;
-    if (!latest || atMs > Date.parse(latest.fetchedAt)) latest = snapshot;
-    if (atMs <= cutoff) {
-      if (!latestAged || atMs > Date.parse(latestAged.fetchedAt)) latestAged = snapshot;
+    if (atMs <= cutoff && atMs > latestAgedMs) {
+      latestAged = snapshot;
+      latestAgedMs = atMs;
     }
   }
+  if (!latestAged) return 0n;
 
-  if (!latest || !latestAged) return 0n;
-  // The smaller of "how many there are" and "how many had time to settle".
-  return latestAged.views < latest.views ? latestAged.views : latest.views;
+  // The **minimum across the whole window**, not the smaller of its two
+  // endpoints.
+  //
+  // Comparing only the anchor to the newest count asks "were there this many
+  // then, and are there this many now" — which a count that was scrubbed to
+  // zero in between answers yes to. 10,000 -> 0 -> 10,000 confirmed the full
+  // 10,000, and the platform having destroyed every one of those views was
+  // invisible. Those are two different sets of bought views, neither of which
+  // survived a day, and paying for them is the exact outcome this file exists
+  // to prevent.
+  //
+  // A dip therefore suppresses payment for one dwell window and no longer.
+  // As time passes the anchor advances past the dip, and views that genuinely
+  // held for a full window afterwards are paid normally. That is the intended
+  // meaning of "survived": present at the start, and never absent since.
+  let confirmed = latestAged.views;
+  for (const snapshot of snapshots) {
+    const atMs = Date.parse(snapshot.fetchedAt);
+    if (Number.isNaN(atMs)) continue;
+    if (atMs < latestAgedMs) continue; // before the anchor: views hadn't arrived yet
+    if (snapshot.views < confirmed) confirmed = snapshot.views;
+  }
+  return confirmed;
 }
 
 /**

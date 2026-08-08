@@ -24,7 +24,18 @@
 import { Decimal } from '../decimal';
 import { parsePostUrl } from './postref';
 import { acceptSubmission, DEFAULT_SETTLEMENT_WINDOW_MS } from './terms';
+
 import type { Campaign, Creator, Platform, Submission } from './types';
+
+/**
+ * The shortest dwell that means anything.
+ *
+ * Platforms remove inauthentic views retroactively, on their own schedule —
+ * usually within a day, which is where the 24h default comes from. An hour is
+ * the floor at which "this count survived" is a claim about the world rather
+ * than a restatement of what the API said a moment ago.
+ */
+export const MIN_DWELL_HOURS = 1;
 
 /** An EVM address, which is all a creator needs to be paid. */
 const ADDRESS = /^0x[a-fA-F0-9]{40}$/;
@@ -118,9 +129,26 @@ export function openCampaign(
     }
   }
 
+  // The floor is not a validation nicety — it is the product.
+  //
+  // A dwell of zero confirms views the instant they are reported, which is
+  // precisely the behaviour every incumbent has and the reason a brand paid
+  // $1,500 for 845,000 bot views. It would let a campaign disable the one
+  // mechanic this platform exists for, while the platform continued telling
+  // creators and brands that only cleared views get paid. That claim has to be
+  // true of every campaign or it is not true at all.
+  //
+  // The ceiling matters less but is real: a dwell longer than a week is
+  // indistinguishable from not paying, and the creator has already done the
+  // work.
   const dwellHours = Number(input.dwellHours ?? 24);
-  if (!Number.isFinite(dwellHours) || dwellHours < 0 || dwellHours > 168) {
-    return bad('dwellHours must be between 0 and 168', 'dwellHours');
+  if (!Number.isFinite(dwellHours) || dwellHours < MIN_DWELL_HOURS || dwellHours > 168) {
+    return bad(
+      `dwellHours must be between ${MIN_DWELL_HOURS} and 168. Below ${MIN_DWELL_HOURS} the ` +
+        'platform has not had time to remove inauthentic views, so a confirmed ' +
+        'count means nothing',
+      'dwellHours',
+    );
   }
 
   const settlementDays = Number(input.settlementDays ?? 14);
