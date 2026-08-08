@@ -216,12 +216,32 @@ describe('keys', () => {
     expect(eventIdFor(e, '2026-08-05T12:00:00.000Z')).toBe('pay-sub-1-2000');
   });
 
-  test('the timestamp leads, so key order is time order', () => {
+  test('the same fact at a different time produces the SAME key', () => {
+    // The bug this replaces: a timestamp prefix meant a retry a second later
+    // got a different key, so putIfAbsent never collided and the duplicate was
+    // written. For a payout that double-counts spend against the pool.
     const mk = (at: string): EventEnvelope => ({
-      version: 1, eventId: 'z', at,
-      event: { type: 'payout_settled', payout: payout('z', 1n, '1') },
+      version: 1, eventId: 'pay-sub-1-2000', at,
+      event: { type: 'payout_settled', payout: payout('pay-sub-1-2000', 2_000n, '2') },
     });
-    expect(keyFor(mk('2026-08-01T00:00:00.000Z')) < keyFor(mk('2026-08-02T00:00:00.000Z'))).toBe(true);
+    expect(keyFor(mk('2026-08-01T00:00:00.000Z')))
+      .toBe(keyFor(mk('2026-08-02T09:31:44.123Z')));
+  });
+
+  test('a retry one second later is refused, not recorded twice', async () => {
+    const log = new EventLog(new MemoryBlobStore());
+    await seed(log);
+    const settled = payout('pay-sub-1-1000', 1_000n, '1');
+
+    // Different wall-clock times, as a crash-and-retry would really have.
+    expect(await log.append({ type: 'payout_settled', payout: settled }, new Date('2026-08-08T10:00:00Z'))).toBe(true);
+    expect(await log.append({ type: 'payout_settled', payout: settled }, new Date('2026-08-08T10:00:01Z'))).toBe(false);
+
+    const store = new CampaignStore();
+    await log.hydrate(store);
+    // I12 would have been breached here: spend counted twice against the pool.
+    expect(store.payoutsFor('camp-1')).toHaveLength(1);
+    expect(store.spentOnCampaign('camp-1').toString()).toBe('1');
   });
 
   test('no identifying data reaches the key', () => {

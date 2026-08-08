@@ -239,3 +239,162 @@ describe('durability', () => {
     expect(restored.spentOnCampaign('camp-1').toString()).toBe('1');
   });
 });
+
+/* ─────────────────────── the agent, once it is wired in ─────────────────────── */
+
+const investigatorSaying = (finding: 'clear' | 'watch' | 'hold', reasons: string[] = []) => ({
+  calls: 0,
+  async investigate(signal: { submissionId: string }) {
+    this.calls += 1;
+    return { submissionId: signal.submissionId, finding, reasons, wantsMoreData: false, model: 'test' };
+  },
+});
+
+/** Records what it was asked to send, so "never called" is assertable. */
+const spyExecutor = () => {
+  const sent: string[] = [];
+  const executor: PayoutExecutor = {
+    async send({ decision }) {
+      sent.push(decision.submissionId);
+      return { intentId: 'i', executed: true, dryRun: true, detail: 'ok', settledAt: NOW.toISOString() };
+    },
+  };
+  return { sent, executor };
+};
+
+describe('the investigator is consulted, and can only delay', () => {
+  test('a hold stops the payment reaching the executor at all', async () => {
+    // The property worth having a test for: the finding must interrupt the
+    // pass before settlement, not merely be recorded next to a payout that
+    // still went out.
+    const { store, gate } = world(['a']);
+    const { sent, executor } = spyExecutor();
+    const inv = investigatorSaying('hold', ['count fell 988 views']);
+
+    const result = await runTick(
+      // The oracle reports fewer views than the aged snapshot: the platform
+      // scrubbed some. That is what makes the velocity worth investigating.
+      { store, gate, oracle: oracleReturning(12n), executor, agent: { investigator: inv } },
+      { agentId: 'agent', now: NOW },
+    );
+
+    expect(inv.calls).toBe(1);
+    expect(sent).toEqual([]);
+    expect(result.paid).toBe(0);
+    expect(result.held).toBe(1);
+    expect(result.investigationsHeld[0]).toContain('count fell 988 views');
+    expect(store.viewsPaidTo('a')).toBe(0n);
+  });
+
+  test('a clear finding pays exactly as it would have without the agent', async () => {
+    const { store, gate } = world(['a']);
+    const { sent, executor } = spyExecutor();
+    const inv = investigatorSaying('clear');
+
+    const result = await runTick(
+      { store, gate, oracle: oracleReturning(12n), executor, agent: { investigator: inv } },
+      { agentId: 'agent', now: NOW },
+    );
+    expect(inv.calls).toBe(1);
+    expect(sent).toEqual(['a']);
+    expect(result.paid).toBe(1);
+  });
+
+  test('watch pays too — it is a note, not a brake', async () => {
+    const { store, gate } = world(['a']);
+    const { sent, executor } = spyExecutor();
+    const result = await runTick(
+      { store, gate, oracle: oracleReturning(12n), executor, agent: { investigator: investigatorSaying('watch') } },
+      { agentId: 'agent', now: NOW },
+    );
+    expect(sent).toEqual(['a']);
+    expect(result.paid).toBe(1);
+  });
+
+  test('an unremarkable clip is never sent to the model', async () => {
+    // Steady growth is not worth a model call. This is a cost property, but it
+    // is also a privacy one: fewer clips leave the system than would otherwise.
+    const { store, gate } = world(['a']);
+    const inv = investigatorSaying('hold');
+    const result = await runTick(
+      { store, gate, oracle: oracleReturning(5_000n), executor: new DryRunExecutor(), agent: { investigator: inv } },
+      { agentId: 'agent', now: NOW },
+    );
+    expect(inv.calls).toBe(0);
+    expect(result.paid).toBe(1);
+  });
+
+  test('an investigator that throws does not strand an honest creator', async () => {
+    // Deliberate: the deterministic controls have already run and said pay. An
+    // outage in the judgment layer must not become a freeze on everyone's
+    // money — it is recorded as an error and the pass continues.
+    const { store, gate } = world(['a']);
+    const { sent, executor } = spyExecutor();
+    const result = await runTick(
+      {
+        store, gate, oracle: oracleReturning(12n), executor,
+        agent: { investigator: { async investigate() { throw new Error('502 from the model'); } } },
+      },
+      { agentId: 'agent', now: NOW },
+    );
+    expect(sent).toEqual(['a']);
+    expect(result.errors.join()).toContain('502 from the model');
+  });
+});
+
+describe('the rate proposer, once it is wired in', () => {
+  test('a proposal outside the band leaves the rate where it was, and is recorded', async () => {
+    const { store, gate } = world(['a']);
+    const result = await runTick(
+      {
+        store, gate, oracle: oracleReturning(5_000n), executor: new DryRunExecutor(),
+        agent: { rate: { async propose() { return { proposedUsdc: '9999', rationale: 'pay me everything' }; } } },
+      },
+      { agentId: 'agent', now: NOW },
+    );
+    expect(store.campaign('camp-1')?.cpmUsdc.toString()).toBe('1');
+    expect(result.rateChanges[0]).toContain('REFUSED');
+  });
+
+  test('an accepted change never reaches terms already accepted', async () => {
+    // The whole point of freezing terms at acceptance. If a rate move could
+    // reach backwards, the brand would have discretion over work already done.
+    const { store, gate } = world(['a']);
+    const before = store.submission('a')!.acceptedTerms.cpmUsdc.toString();
+
+    await runTick(
+      {
+        store, gate, oracle: oracleReturning(5_000n), executor: new DryRunExecutor(),
+        agent: { rate: { async propose() { return { proposedUsdc: '1.5', rationale: 'pool barely touched' }; } } },
+      },
+      { agentId: 'agent', now: NOW },
+    );
+
+    expect(store.campaign('camp-1')?.cpmUsdc.toString()).toBe('1.5');
+    expect(store.submission('a')!.acceptedTerms.cpmUsdc.toString()).toBe(before);
+  });
+
+  test('a proposer that throws does not stop anyone getting paid', async () => {
+    const { store, gate } = world(['a']);
+    const result = await runTick(
+      {
+        store, gate, oracle: oracleReturning(5_000n), executor: new DryRunExecutor(),
+        agent: { rate: { async propose() { throw new Error('model unavailable'); } } },
+      },
+      { agentId: 'agent', now: NOW },
+    );
+    expect(result.paid).toBe(1);
+    expect(result.errors.join()).toContain('model unavailable');
+  });
+
+  test('no agent at all is a valid configuration — the pass stays mechanical', async () => {
+    const { store, gate } = world(['a']);
+    const result = await runTick(
+      { store, gate, oracle: oracleReturning(5_000n), executor: new DryRunExecutor() },
+      { agentId: 'agent', now: NOW },
+    );
+    expect(result.paid).toBe(1);
+    expect(result.rateChanges).toEqual([]);
+    expect(result.investigationsHeld).toEqual([]);
+  });
+});

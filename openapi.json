@@ -1,21 +1,21 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Kronagent Payouts — clip verification",
+    "title": "Merlin Clips — clip verification",
     "version": "1.0.0",
     "summary": "Does this clip meet the brief, and how many of its views survived?",
     "description": "A paid API for agents running creator marketing campaigns.\n\nGiven a post URL and a campaign brief, returns (a) whether the clip satisfies the brief, judged by a multimodal model, and (b) how many of its views have **persisted** rather than merely appeared.\n\nThe second number is the point. Inflated view counts are typically scrubbed by the platform after the fact, which is why campaigns pay for views that later turn out not to exist — one documented case paid $1,500 for ~845,000 views that were 99.999% bots. This service reports the count that survived a dwell window instead of the count that was claimed.\n\n**The first call on a given post starts the clock.** A post seen for the first time has no history to compare against, so `views.confirmed` is `null` and `views.pending` explains why. Call again after the dwell window and the surviving figure is returned. Fields that cannot be answered are always `null` with a stated reason — never a plausible-looking zero.\n\nPayment is x402: an unpaid request returns `402 Payment Required` with the payment requirements. No account and no API key.\n\n**Three tiers.** `/api/verify/preview` is free and answers whether we can handle a link, whether it is already tracked, and when a surviving figure will exist — it deliberately omits the numbers. `/api/views` returns the counts without a verdict, an order of magnitude cheaper because no model runs. `/api/verify` adds the brief judgment.",
     "contact": {
-      "url": "https://github.com/Aditya-galaxy/kronagent-payouts"
+      "url": "https://github.com/Aditya-galaxy/merlinclips"
     },
     "license": {
       "name": "PolyForm Noncommercial 1.0.0 with Competition Grant",
-      "url": "https://github.com/Aditya-galaxy/kronagent-payouts/blob/main/LICENSE"
+      "url": "https://github.com/Aditya-galaxy/merlinclips/blob/main/LICENSE"
     }
   },
   "servers": [
     {
-      "url": "https://kronagent.dev",
+      "url": "https://merlinclips.com",
       "description": "production"
     }
   ],

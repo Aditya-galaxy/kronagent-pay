@@ -37,6 +37,10 @@ import { Decimal } from '../decimal';
 import type { PaymentOutcome } from '../schemas';
 import type { PayoutDecision, PayoutGate } from './payout';
 import type { EventLog } from './eventlog';
+import type { FraudInvestigator, RateProposer } from './agent';
+import { proposeRateFor } from './agent';
+import { applyRate } from './rate';
+import { campaignTelemetry, viewVelocity } from './telemetry';
 import type { CampaignStore } from './store';
 import type { Campaign, Creator, Submission } from './types';
 
@@ -67,10 +71,16 @@ export interface TickDeps {
   executor: PayoutExecutor;
   log?: EventLog;
   sink?: DecisionSink;
+  /** Judgment, both halves optional. Absent means the pass is purely mechanical. */
+  agent?: { rate?: RateProposer; investigator?: FraudInvestigator };
 }
 
 export interface TickResult {
   readonly startedAt: string;
+  /** What the agent proposed and whether the band allowed it. */
+  readonly rateChanges: readonly string[];
+  /** Payouts the investigator delayed. Never payouts it caused. */
+  readonly investigationsHeld: readonly string[];
   readonly campaigns: number;
   readonly submissions: number;
   readonly paid: number;
@@ -88,10 +98,12 @@ export async function runTick(
   options: { agentId: string; now?: Date } = { agentId: 'campaign-agent' },
 ): Promise<TickResult> {
   const now = options.now ?? new Date();
-  const { store, gate, oracle, executor, log, sink } = deps;
+  const { store, gate, oracle, executor, log, sink, agent } = deps;
 
   const decisions: PayoutDecision[] = [];
   const errors: string[] = [];
+  const rateChanges: string[] = [];
+  const investigationsHeld: string[] = [];
   let paid = 0;
   let held = 0;
   let blocked = 0;
@@ -108,6 +120,28 @@ export async function runTick(
   const submissions = store.exportState().submissions;
 
   for (const campaign of campaigns) {
+    // Once per campaign: the agent may move the rate inside the operator's
+    // band. Applied before this pass decides anything, so a change takes
+    // effect on clips accepted afterwards — never on work already accepted,
+    // whose terms are frozen.
+    if (agent?.rate) {
+      try {
+        const decision = await proposeRateFor(
+          campaign, campaignTelemetry(store, campaign, now), agent.rate, now,
+        );
+        if (applyRate(campaign, decision)) {
+          await log?.append({ type: 'campaign_upserted', campaign }, now);
+          rateChanges.push(`${campaign.campaignId}: ${decision.reason}`);
+        } else if (decision.control !== 'unchanged') {
+          // A refused proposal is the interesting one — it is evidence about
+          // the agent, so it is recorded rather than dropped.
+          rateChanges.push(`${campaign.campaignId}: REFUSED — ${decision.reason}`);
+        }
+      } catch (error) {
+        errors.push(`${campaign.campaignId}: rate proposal failed — ${(error as Error).message}`);
+      }
+    }
+
     for (const submission of submissions) {
       if (submission.campaignId !== campaign.campaignId) continue;
       submissionCount += 1;
@@ -136,6 +170,31 @@ export async function runTick(
           else if (decision.disposition === 'requires_approval') needsApproval += 1;
           sink?.record(decision);
           continue;
+        }
+
+        // The investigator runs only on clips about to be paid, and only when
+        // there is enough history to show a trend. Its strongest outcome is a
+        // delay: there is no finding here that releases money.
+        if (agent?.investigator) {
+          const signal = viewVelocity(submission.submissionId, store.snapshots(submission.submissionId));
+          if (signal && (signal.everFell || signal.burstRatio > 5)) {
+            try {
+              const found = await agent.investigator.investigate(signal, {
+                dwellHours: Math.round(submission.acceptedTerms.dwellMs / 3_600_000),
+              });
+              if (found.finding === 'hold') {
+                investigationsHeld.push(
+                  `${submission.submissionId}: ${found.reasons.join('; ') || 'held by investigation'}`,
+                );
+                held += 1;
+                continue;
+              }
+            } catch (error) {
+              // A failed investigation must not block an honest creator. The
+              // deterministic controls already ran and said pay.
+              errors.push(`${submission.submissionId}: investigation failed — ${(error as Error).message}`);
+            }
+          }
         }
 
         const creator = store.creator(submission.creatorId);
@@ -189,6 +248,8 @@ export async function runTick(
     totalPaidUsdc: total,
     decisions,
     errors,
+    rateChanges,
+    investigationsHeld,
   };
 }
 

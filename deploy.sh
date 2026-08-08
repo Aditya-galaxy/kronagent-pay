@@ -10,13 +10,34 @@
 #
 set -euo pipefail
 
-PROJECT="${PROJECT:-kronagent}"
+PROJECT="${PROJECT:-merlinclips}"
 REGION="${REGION:-us-central1}"
-SERVICE="${SERVICE:-kronagent-payouts}"
-BUCKET="${GCS_BUCKET:-kronagent-state}"
+SERVICE="${SERVICE:-merlinclips}"
+BUCKET="${GCS_BUCKET:-merlinclips-state}"
 
 if [ -z "$PROJECT" ] || [ "$PROJECT" = "(unset)" ]; then
   echo "No GCP project set. Run: gcloud config set project <project-id>" >&2
+  exit 1
+fi
+
+# Checked before deploying, not after, because the failure is silent. Without
+# the bucket the campaign store is in-memory on a service that scales to zero:
+# every snapshot dies with the instance, so no view ever survives the dwell
+# window and every submission is held forever. The service would look healthy
+# the entire time. This script never creates the bucket — it prints the command
+# and stops, so the resource is created deliberately rather than as a side
+# effect of a deploy.
+if ! gcloud storage buckets describe "gs://${BUCKET}" --project "$PROJECT" >/dev/null 2>&1; then
+  cat >&2 <<MISSING
+Bucket gs://${BUCKET} not found in project ${PROJECT}.
+
+Deploying without it would come up healthy and silently pay nobody: state
+would live in memory on a service that scales to zero. Create it, then re-run:
+
+  gcloud storage buckets create gs://${BUCKET} \\
+    --project ${PROJECT} --location ${REGION} --uniform-bucket-level-access
+
+MISSING
   exit 1
 fi
 

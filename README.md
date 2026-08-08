@@ -1,4 +1,4 @@
-# Kronagent Payouts
+# Merlin Clips
 
 **You never pay for views that didn't survive.**
 
@@ -140,7 +140,7 @@ Per the competition's *New Projects Only* requirement:
 
 - **This project was created on 2026-08-04**, inside the submission period. Every line of source here is new.
 - **[Circle Agent Stack starter kits](https://github.com/circlefin/agent-stack-starter-kits)** (Apache-2.0) — we build on the `google-adk` kit's tool definitions and its `ApprovalFn` seam. We replace its terminal-prompt approval implementation; we do not vendor its code.
-- **[Kronagent](https://github.com/Aditya-galaxy/Kronagent)**, by the same author, is a cloud threat-defense platform with an earn-trust governance model for autonomous containment actions. **Its design informed this project** — the fail-closed policy ordering, expiring delegated authority, and hash-chained audit. **No code was copied**; this is an independent implementation in a different language for a different domain (irreversible payments rather than reversible containment).
+- **[Merlin Clips](https://github.com/Aditya-galaxy/Merlin Clips)**, by the same author, is a cloud threat-defense platform with an earn-trust governance model for autonomous containment actions. **Its design informed this project** — the fail-closed policy ordering, expiring delegated authority, and hash-chained audit. **No code was copied**; this is an independent implementation in a different language for a different domain (irreversible payments rather than reversible containment).
 
 ## Documentation
 

@@ -33,6 +33,10 @@ import { apply as applyEvent } from './eventlog';
 import { MemoryTrackingStore, previewClip, verifyClip } from './verify';
 import type { ClipVerifier, CountOracle } from './verify';
 import { CircleCliExecutor } from './executor';
+import { openCampaign, submitClip } from './intake';
+import { oracleFromEnv } from './oracle';
+import { verifierFromEnv } from './verifier';
+import { agentFromEnv, type FraudInvestigator, type RateProposer } from './agent';
 import { DryRunExecutor, runTick, type PayoutExecutor, type TickResult, type ViewOracle } from './tick';
 
 /** No oracle configured yet: report "cannot tell", never a fabricated count. */
@@ -69,6 +73,8 @@ export interface CampaignRuntimeOptions {
   oracle?: ViewOracle;
   executor?: PayoutExecutor;
   mandates?: MandateStore;
+  /** Injectable so a test can run the loop without a network. */
+  agent?: { rate?: RateProposer; investigator?: FraudInvestigator };
   env?: Record<string, string | undefined>;
 }
 
@@ -85,6 +91,9 @@ export class CampaignRuntime {
   private readonly tracking = new MemoryTrackingStore();
   private readonly counts?: CountOracle;
   private readonly verifier?: ClipVerifier;
+  /** Empty without credentials, and empty is a working configuration: the
+   *  tick stays purely deterministic rather than falling back to a stub. */
+  private readonly agent: { rate?: RateProposer; investigator?: FraudInvestigator };
   private loaded = false;
   private lastTick?: TickResult;
 
@@ -92,7 +101,9 @@ export class CampaignRuntime {
     this.env = options.env ?? Bun.env;
     this.blobs = options.blobs ?? chooseBlobStore(this.env);
     this.log = new EventLog(this.blobs);
-    this.oracle = options.oracle ?? NULL_ORACLE;
+    // The tick's view source is the same YouTube oracle the paid endpoint
+    // uses; NULL_ORACLE only when no key is configured.
+    this.oracle = options.oracle ?? oracleFromEnv(this.env) ?? NULL_ORACLE;
     // With a wallet configured, settlement goes through the real CLI — in
     // estimate mode unless mainnet is explicitly armed, so the path is
     // exercised end to end before it can move anything.
@@ -105,8 +116,11 @@ export class CampaignRuntime {
           })
         : new DryRunExecutor());
     this.mandates = options.mandates ?? new MandateStore();
-    this.counts = options.counts;
-    this.verifier = options.verifier;
+    // Real when the keys are present, absent otherwise — never a stub that
+    // answers zero or always passes. Every consumer reports the absence.
+    this.counts = options.counts ?? oracleFromEnv(this.env);
+    this.verifier = options.verifier ?? verifierFromEnv(this.env);
+    this.agent = options.agent ?? agentFromEnv(this.env);
 
     this.gate = new PayoutGate(
       this.store,
@@ -156,6 +170,7 @@ export class CampaignRuntime {
         oracle: this.oracle,
         executor: this.executor,
         log: this.log,
+        agent: this.agent,
       },
       { agentId: this.env.AGENT_ID ?? 'campaign-agent', now },
     );
@@ -175,6 +190,10 @@ export class CampaignRuntime {
     return {
       persistence: this.blobs.constructor.name,
       ephemeral: this.blobs instanceof MemoryBlobStore,
+      // Stated rather than discovered: a campaign with no verifier holds every
+      // clip on `no_verdict`, and one with no oracle never confirms a view.
+      verifier: this.verifier ? 'gemini' : 'not configured (GOOGLE_API_KEY)',
+      viewOracle: this.counts ? 'youtube' : 'not configured (YOUTUBE_API_KEY)',
       campaigns: state.campaigns.map((c) => ({
         campaignId: c.campaignId,
         brief: c.brief,
@@ -270,6 +289,130 @@ export class CampaignRuntime {
       { tracking: this.tracking, oracle: this.counts, verifier: this.verifier },
     );
     return Response.json(result);
+  }
+
+  /**
+   * `POST /api/campaigns` — a brand opens a campaign.
+   *
+   * Operator-gated with the same secret as the tick, because declaring a pool
+   * is declaring an intention to pay. Anyone who can call this can commit the
+   * operator's money.
+   */
+  async handleOpenCampaign(request: Request): Promise<Response> {
+    const guard = this.requireOperator(request);
+    if (guard) return guard;
+    await this.ready();
+
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const result = openCampaign(body);
+    if (!result.ok) {
+      return Response.json({ error: result.error, field: result.field }, { status: 400 });
+    }
+
+    await this.record({ type: 'campaign_upserted', campaign: result.value });
+    const c = result.value;
+    return Response.json(
+      {
+        campaignId: c.campaignId,
+        brief: c.brief,
+        poolUsdc: c.poolUsdc.toString(),
+        cpmUsdc: c.cpmUsdc.toString(),
+        perCreatorCapUsdc: c.perCreatorCapUsdc.toString(),
+        dwellHours: Math.round(c.dwellMs / 3_600_000),
+        settlementDays: Math.round(c.settlementWindowMs / 86_400_000),
+        platforms: c.platforms,
+        chain: c.chain,
+        endsAt: c.endsAt,
+        submitTo: `/api/submissions`,
+      },
+      { status: 201 },
+    );
+  }
+
+  /**
+   * `POST /api/submissions` — a creator submits a clip.
+   *
+   * Deliberately public. The payout address is the identity, because it is the
+   * thing that receives money; requiring a signup before someone can be paid
+   * is the friction this product exists to remove.
+   */
+  async handleSubmit(request: Request): Promise<Response> {
+    await this.ready();
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const campaign = this.store.campaign(String(body.campaignId ?? ''));
+    const result = submitClip(campaign, body);
+    if (!result.ok) {
+      return Response.json({ error: result.error, field: result.field }, { status: 400 });
+    }
+
+    const { submission, creator } = result.value;
+    await this.record({ type: 'creator_upserted', creator });
+    const isNew = await this.record({ type: 'submission_accepted', submission });
+
+    const terms = submission.acceptedTerms;
+    return Response.json(
+      {
+        submissionId: submission.submissionId,
+        alreadySubmitted: !isNew,
+        url: submission.url,
+        platform: submission.platform,
+        // The deal, echoed back. It is frozen from this moment and the brand
+        // cannot change it under work already accepted.
+        agreedTerms: {
+          cpmUsdc: terms.cpmUsdc.toString(),
+          perCreatorCapUsdc: terms.perCreatorCapUsdc.toString(),
+          dwellHours: Math.round(terms.dwellMs / 3_600_000),
+          acceptedAt: terms.acceptedAt,
+          guaranteedUntil: terms.settlementDeadline,
+        },
+        poolRemainingUsdc: this.store.remainingPool(submission.campaignId).toString(),
+        next:
+          'your views are counted from now. nothing pays until they have held ' +
+          `for ${Math.round(terms.dwellMs / 3_600_000)}h — check /api/submissions/` +
+          submission.submissionId,
+      },
+      { status: isNew ? 201 : 200 },
+    );
+  }
+
+  /** `GET /api/submissions/:id` — what a creator sees about their own clip. */
+  async handleSubmissionStatus(submissionId: string): Promise<Response> {
+    await this.ready();
+    const submission = this.store.submission(submissionId);
+    if (!submission) return Response.json({ error: 'unknown submission' }, { status: 404 });
+
+    const decision = this.gate.decide(submissionId, {
+      agentId: this.env.AGENT_ID ?? 'campaign-agent',
+    });
+    const verdict = this.store.latestVerdict(submissionId);
+
+    return Response.json({
+      submissionId,
+      url: submission.url,
+      status: decision.disposition,
+      // Written for the creator, not a log parser — including on a refusal.
+      reason: decision.reason,
+      verdict: verdict && { pass: verdict.pass, reasons: verdict.reasons, at: verdict.at },
+      confirmedViews: decision.confirmedViews.toString(),
+      paidForViews: this.store.viewsPaidTo(submissionId).toString(),
+      earnedUsdc: this.store.spentOnCreator(submission.campaignId, submission.creatorId).toString(),
+      guaranteedUntil: submission.acceptedTerms.settlementDeadline,
+    });
+  }
+
+  /** Shared operator gate. Same reasoning as the tick: fail closed. */
+  private requireOperator(request: Request): Response | null {
+    const expected = this.env.TICK_SECRET;
+    if (!expected) {
+      return Response.json(
+        { error: 'TICK_SECRET is not configured — refusing operator actions' },
+        { status: 503 },
+      );
+    }
+    if (!secretMatches(request.headers.get('x-tick-secret'), expected)) {
+      return Response.json({ error: 'unauthorised' }, { status: 401 });
+    }
+    return null;
   }
 
   /** Route handler for `POST /api/tick`. Returns null when the path isn't ours. */

@@ -175,6 +175,25 @@ const server = Bun.serve({
     // submitting and being told the pot ran dry.
     if (url.pathname === '/api/campaign') return json(await campaigns.publicView());
 
+    // A brand opens a campaign. Operator-gated: declaring a pool is declaring
+    // an intention to pay.
+    if (url.pathname === '/api/campaigns' && request.method === 'POST') {
+      return campaigns.handleOpenCampaign(request);
+    }
+
+    // A creator submits a clip. Deliberately public — the payout address is
+    // the identity, and requiring a signup before someone can be paid is the
+    // friction this product exists to remove.
+    if (url.pathname === '/api/submissions' && request.method === 'POST') {
+      return campaigns.handleSubmit(request);
+    }
+
+    // What a creator sees about their own clip, refusals included.
+    const submissionMatch = url.pathname.match(/^\/api\/submissions\/([A-Za-z0-9._-]+)$/);
+    if (submissionMatch && request.method === 'GET') {
+      return campaigns.handleSubmissionStatus(submissionMatch[1]!);
+    }
+
     // Driven by Cloud Scheduler, not by an in-process timer: each pass arrives
     // as a request, so Cloud Logging records every agent run for free.
     if (url.pathname === '/api/tick' && request.method === 'POST') {
@@ -336,14 +355,14 @@ const server = Bun.serve({
   },
 });
 
-console.log(`kronagent-payouts console on http://localhost:${server.port}`);
+console.log(`merlinclips console on http://localhost:${server.port}`);
 
 const PAGE = /* html */ `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kronagent Payouts — pay only for views that survived</title>
+<title>Merlin Clips — pay only for views that survived</title>
 <style>
   :root {
     --bg:#0b0f17; --panel:#121826; --border:#1f2937; --text:#e5e7eb;
@@ -395,7 +414,7 @@ const PAGE = /* html */ `<!doctype html>
 </style>
 </head>
 <body><div class="wrap">
-  <h1>Kronagent Payouts</h1>
+  <h1>Merlin Clips</h1>
   <p class="sub">An AI agent can already pay. Nothing decides whether it <em>should</em>.
   Every button below runs the real policy engine, mandates, rolling budget and hash-chained
   ledger — the same code path the live agent uses against Circle's Agent Stack.</p>

@@ -24,7 +24,7 @@ const WALLET = '0xAgentWallet0000000000000000000000000000';
 const config: X402Config = {
   payTo: WALLET,
   priceUsdc: USDC('1.00'),
-  resource: 'https://pay.kronagent.dev/api/job',
+  resource: 'https://pay.merlinclips.com/api/job',
   description: 'One researched answer, sources purchased on your behalf.',
 };
 
