@@ -245,10 +245,42 @@ describe('a tick never runs twice at once in one process', () => {
     expect(started).toBe(0); // nothing to settle here; the point is it ran once
   });
 
-  test('a later tick still runs once the first has finished', async () => {
-    const runtime = new CampaignRuntime({ blobs: new MemoryBlobStore(), env: {} });
+  test('a later tick in a NEW window runs; the same window does not', async () => {
+    const runtime = new CampaignRuntime({ blobs: new MemoryBlobStore(), env: {}, leaseWindowMs: 60_000 });
     const first = await runtime.tick(NOW);
-    const second = await runtime.tick(NOW);
-    expect(second).not.toBe(first); // not a stuck promise
+    expect(first.skipped).toBeUndefined();
+
+    // Same window — refused, and it says so rather than reporting a quiet pass.
+    const again = await runtime.tick(NOW);
+    expect(again.skipped).toBeDefined();
+
+    // Next window — proceeds, so the guard is not a stuck promise.
+    const later = await runtime.tick(new Date(NOW.getTime() + 60_000));
+    expect(later.skipped).toBeUndefined();
+  });
+});
+
+describe('two instances cannot settle the same window', () => {
+  test('a shared store lets exactly one of them run', async () => {
+    // Two runtimes, no knowledge of each other, one bucket. This is the Cloud
+    // Run case: a scheduler retry landing on a second instance while the
+    // first is mid-pass.
+    const shared = new MemoryBlobStore();
+    const a = new CampaignRuntime({ blobs: shared, env: {}, leaseWindowMs: 60_000 });
+    const b = new CampaignRuntime({ blobs: shared, env: {}, leaseWindowMs: 60_000 });
+
+    const [ra, rb] = await Promise.all([a.tick(NOW), b.tick(NOW)]);
+    const ran = [ra, rb].filter((r) => !r.skipped);
+    expect(ran).toHaveLength(1);
+  });
+
+  test('a skipped pass is never reported as a pass that found nothing', async () => {
+    const shared = new MemoryBlobStore();
+    const a = new CampaignRuntime({ blobs: shared, env: {}, leaseWindowMs: 60_000 });
+    const b = new CampaignRuntime({ blobs: shared, env: {}, leaseWindowMs: 60_000 });
+    await a.tick(NOW);
+    const second = await b.tick(NOW);
+    expect(second.skipped).toContain('another instance');
+    expect(second.paid).toBe(0);
   });
 });

@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Testing — Merlin Clips</title>
-<meta name="description" content="Property-based invariants and deterministic simulation testing: 400,000 decisions across 248 simulated years, every run reproducible from its seed." />
+<meta name="description" content="Property-based invariants and deterministic simulation testing: 600,000 decisions across 372 simulated years, every run reproducible from its seed." />
 <meta property="og:title" content="Merlin Clips — how it is tested" />
 <meta property="og:description" content="Example tests prove the cases we thought of. For the component that decides whether money moves, that is the weaker claim." />
 <meta name="theme-color" content="#000000" />
@@ -33,15 +33,15 @@
 <hr />
 
 <section><div class="wrap">
-  <span class="num">400,000</span>
-  <span class="num-cap">DECISIONS · 248 SIMULATED YEARS · 3.6 SECONDS · ZERO VIOLATIONS</span>
+  <span class="num">600,000</span>
+  <span class="num-cap">DECISIONS · 372 SIMULATED YEARS · 5.7 SECONDS · ZERO VIOLATIONS</span>
 </div></section>
 
 <hr />
 
 <section><div class="wrap">
   <h2>Properties, not examples</h2>
-  <p>Each of the <a href="/security.html">ten invariants</a> is stated as a property that must hold
+  <p>Each of the <a href="/security.html">twenty-one invariants</a> is stated as a property that must hold
   for <em>all</em> inputs, and a generator searches for a counterexample. When it finds one it
   shrinks it to the smallest failing case — the difference between “something broke” and “here is
   the one-line reproduction.”</p>
@@ -70,9 +70,9 @@
 
   <div class="term"><span class="c-dim">$ bun run sweep</span>
 runs           <span class="c-acc">200 seeds</span>
-decisions      <span class="c-acc">400,000</span>
-simulated time <span class="c-acc">248.5 years</span>
-wall clock     <span class="c-acc">3.6s</span>
+decisions      <span class="c-acc">600,000</span>
+simulated time <span class="c-acc">372.5 years</span>
+wall clock     <span class="c-acc">5.7s</span>
 violations     <span class="c-ok">none</span></div>
 
   <p>This was cheap because the system was built to be simulatable: the clock is injected
@@ -83,7 +83,7 @@ violations     <span class="c-ok">none</span></div>
 <hr />
 
 <section><div class="wrap">
-  <h2>Two defects this found in itself</h2>
+  <h2>Three defects this found in itself</h2>
   <div class="list">
     <div class="item"><div class="k">Ledger</div><div>
       <h3>The payload was never hashed</h3>
@@ -99,9 +99,20 @@ violations     <span class="c-ok">none</span></div>
       while appearing thorough. That is the worst class of testing bug, because it inflates
       confidence rather than failing. The state is avalanched now, with a test pinning
       decorrelation.</p></div></div>
+
+    <div class="item"><div class="k">Concurrency</div><div>
+      <h3>Spend that doubled where nobody could see it</h3>
+      <p>Two passes overlapping recorded 6 USDC of spend for 3 USDC of payouts. The append-only log
+      refused the duplicate events correctly; the in-memory ledger recorded them anyway, because
+      the append's return value was discarded. What makes this the worst of the three is that it
+      was <em>invisible</em> — replaying the log afterwards gives the right total, so every audit
+      path, every export and every restart showed no problem. The corruption lived only in the
+      instance actually deciding, where a campaign would start refusing payouts as pool-exhausted
+      while half its recorded spend never happened. Found by injecting faults into the real
+      runtime rather than by reading the code.</p></div></div>
   </div>
 
-  <div class="note"><p>Both are listed because a testing page that only reports passes is a
+  <div class="note"><p>All three are listed because a testing page that only reports passes is a
   marketing page. The reason to trust the numbers above is that the same process caught these.</p></div>
 </div></section>
 
@@ -109,7 +120,7 @@ violations     <span class="c-ok">none</span></div>
 
 <section><div class="wrap">
   <h2>Honest limits</h2>
-  <p>TigerBeetle runs two millennia of simulated time per day on a thousand cores. This runs 248
+  <p>TigerBeetle runs two millennia of simulated time per day on a thousand cores. This runs 372
   years in 3.6 seconds on one. <strong>Same method, not the same coverage</strong>, and it would be
   dishonest to imply otherwise.</p>
   <p>Not yet covered: concurrency against a durable store, which does not exist yet; fault injection
