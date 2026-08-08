@@ -77,6 +77,12 @@ export interface TickDeps {
 
 export interface TickResult {
   readonly startedAt: string;
+  /**
+   * Set when the pass did not run at all. A skipped pass is not a pass that
+   * found nothing to do, and reporting it as `paid: 0` would make a lease
+   * collision indistinguishable from a quiet hour.
+   */
+  readonly skipped?: string;
   /** What the agent proposed and whether the band allowed it. */
   readonly rateChanges: readonly string[];
   /** Payouts the investigator delayed. Never payouts it caused. */
@@ -266,6 +272,25 @@ export async function runTick(
     errors,
     rateChanges,
     investigationsHeld,
+  };
+}
+
+/** A pass that never started, stated as such. */
+export function skippedTick(now: Date, reason: string): TickResult {
+  return {
+    startedAt: now.toISOString(),
+    skipped: reason,
+    campaigns: 0,
+    submissions: 0,
+    paid: 0,
+    held: 0,
+    blocked: 0,
+    needsApproval: 0,
+    totalPaidUsdc: new Decimal(0n),
+    decisions: [],
+    errors: [],
+    rateChanges: [],
+    investigationsHeld: [],
   };
 }
 

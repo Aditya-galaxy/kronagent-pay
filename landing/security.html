@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Security — Merlin Clips</title>
-<meta name="description" content="The threat model: what is trusted, what is not, the attacks in scope, the ten invariants, and what this deliberately does not defend against." />
+<meta name="description" content="The threat model: what is trusted, what is not, the attacks in scope, the twenty-one invariants, and what this deliberately does not defend against." />
 <meta property="og:title" content="Merlin Clips — threat model" />
 <meta property="og:description" content="The agent is not trusted. That is the founding assumption, and everything else follows from it." />
 <meta name="theme-color" content="#000000" />
@@ -26,8 +26,8 @@
 <section class="hero"><div class="wrap">
   <span class="eyebrow">Threat model</span>
   <h1>The agent is not trusted</h1>
-  <p class="lede">That is the founding assumption. A sufficiently well-crafted vendor listing will
-  convince a model to propose paying an attacker, and no amount of prompt engineering makes that
+  <p class="lede">That is the founding assumption. A sufficiently well-crafted clip — or campaign brief — will
+  convince a model to approve a payout to an attacker, and no amount of prompt engineering makes that
   reliably false.</p>
 </div></section>
 
@@ -40,7 +40,8 @@
     <tr><td class="mono">the operator</td><td>Yes</td><td>Authenticated human; their intent <em>is</em> the policy</td></tr>
     <tr><td class="mono">the policy engine</td><td>Yes</td><td>Deterministic; reads nothing an attacker can write</td></tr>
     <tr><td class="mono">the model</td><td><strong>No</strong></td><td>Reads attacker-influenced text; can be induced to propose anything</td></tr>
-    <tr><td class="mono">vendor listings</td><td><strong>No</strong></td><td>Marketing copy written by counterparties</td></tr>
+    <tr><td class="mono">clips and briefs</td><td><strong>No</strong></td><td>Written by the party asking to be paid</td></tr>
+    <tr><td class="mono">reported view counts</td><td><strong>No</strong></td><td>Read from the platform, never from the submitter — and buyable either way</td></tr>
     <tr><td class="mono">the payment client</td><td>Partly</td><td>Trusted to execute correctly; never as the only control</td></tr>
   </table>
 
@@ -58,15 +59,16 @@
   <div class="list">
     <div class="item"><div class="k">Injection</div><div>
       <h3>Payment redirection</h3>
-      <p>A listing instructs the agent to pay an attacker’s address. The agent proposes it — models
+      <p>A clip’s description instructs the agent to pay an attacker’s address. The agent proposes it — models
       do. The engine has no permission for that counterparty, so nothing moves, and the injected
       text is written to the record verbatim as evidence rather than discarded.</p></div></div>
 
     <div class="item"><div class="k">Price</div><div>
-      <h3>An honest vendor, a dishonest quote</h3>
-      <p>A permitted vendor quotes $500 for a one-cent endpoint, or an injected instruction inflates
-      the amount. Trusting a counterparty is not the same as accepting any price from it, so the
-      per-payment ceiling binds independently of who is being paid.</p></div></div>
+      <h3>A real creator, bought views</h3>
+      <p>An accepted creator posts a genuine clip and buys 800,000 views for it. Trusting a
+      counterparty is not the same as accepting any number from them: the dwell window means
+      bought views are gone before settlement, and the per-payment ceiling binds independently of
+      who is being paid.</p></div></div>
 
     <div class="item"><div class="k">Attrition</div><div>
       <h3>Drain by a thousand small charges</h3>
@@ -91,7 +93,7 @@
 <hr />
 
 <section><div class="wrap">
-  <h2>The ten invariants</h2>
+  <h2>The twenty-one invariants</h2>
   <p>These are the promises. Each is enforced in code and checked against generated inputs rather
   than chosen examples — see <a href="/testing.html">testing</a>.</p>
   <table>
