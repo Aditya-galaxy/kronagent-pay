@@ -175,6 +175,25 @@ const server = Bun.serve({
     // submitting and being told the pot ran dry.
     if (url.pathname === '/api/campaign') return json(await campaigns.publicView());
 
+    // A brand opens a campaign. Operator-gated: declaring a pool is declaring
+    // an intention to pay.
+    if (url.pathname === '/api/campaigns' && request.method === 'POST') {
+      return campaigns.handleOpenCampaign(request);
+    }
+
+    // A creator submits a clip. Deliberately public — the payout address is
+    // the identity, and requiring a signup before someone can be paid is the
+    // friction this product exists to remove.
+    if (url.pathname === '/api/submissions' && request.method === 'POST') {
+      return campaigns.handleSubmit(request);
+    }
+
+    // What a creator sees about their own clip, refusals included.
+    const submissionMatch = url.pathname.match(/^\/api\/submissions\/([A-Za-z0-9._-]+)$/);
+    if (submissionMatch && request.method === 'GET') {
+      return campaigns.handleSubmissionStatus(submissionMatch[1]!);
+    }
+
     // Driven by Cloud Scheduler, not by an in-process timer: each pass arrives
     // as a request, so Cloud Logging records every agent run for free.
     if (url.pathname === '/api/tick' && request.method === 'POST') {
