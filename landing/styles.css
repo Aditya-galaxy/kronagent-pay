@@ -173,3 +173,20 @@ td.mono{font-family:var(--mono);font-size:13px;color:var(--text)}
 footer{border-top:1px solid var(--line);padding:28px 0 60px;color:var(--muted);font-size:13.5px}
 footer a{color:var(--muted);text-decoration:underline}
 footer a:hover{color:var(--text)}
+
+/* ── creator / brand toggle ────────────────────────────────────────────────
+   The hero has two audiences with opposite anxieties: a creator asks "will I
+   actually be paid", a brand asks "am I paying for bots". Answering both in
+   one headline answered neither well. Both panels ship in the HTML, so the
+   page still reads completely with JavaScript off. */
+.toggle{position:relative;display:inline-flex;padding:4px;border-radius:100px;
+        border:1px solid var(--line-hi);background:var(--surface);margin-bottom:26px}
+.toggle button{position:relative;z-index:1;background:none;border:0;cursor:pointer;
+               font-family:var(--sans);font-size:13px;font-weight:600;letter-spacing:.02em;
+               padding:8px 18px;border-radius:100px;color:var(--muted);transition:color .18s}
+.toggle button[aria-selected="true"]{color:#000}
+.toggle .knob{position:absolute;top:4px;left:4px;height:calc(100% - 8px);width:calc(50% - 4px);
+              border-radius:100px;transition:transform .22s cubic-bezier(.4,0,.2,1),background .22s;
+              background:linear-gradient(100deg,var(--pop),#C4B5FD)}
+.toggle[data-on="brand"] .knob{transform:translateX(100%);
+              background:linear-gradient(100deg,var(--accent),#A5F3FC)}

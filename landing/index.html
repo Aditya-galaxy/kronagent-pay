@@ -30,15 +30,38 @@
 <main>
 
 <section class="hero"><div class="wrap">
-  <span class="pill live">Settling on Base · USDC</span>
-  <h1 style="margin-top:18px">Where attention <span class="grad">stays</span>,<br />money flows.</h1>
-  <p class="lede">Brands run creator campaigns. Creators get paid in USDC — but only for the views
-  that were <strong>still there a day later</strong>. Bought views evaporate. Real ones don't.</p>
-  <div class="row">
-    <a class="btn pop" href="#how">See how it works</a>
-    <a class="btn ghost" href="/architecture.html">Read the architecture →</a>
+  <!-- Two audiences, one page. Showing both at once made the hero argue with
+       itself: a creator wants to know they'll be paid, a brand wants to know
+       it won't pay for bots. Same mechanic, opposite anxiety. -->
+  <div class="toggle" role="tablist" aria-label="Choose your side">
+    <button role="tab" id="t-creator" aria-controls="p-creator" aria-selected="true">For creators</button>
+    <button role="tab" id="t-brand" aria-controls="p-brand" aria-selected="false">For brands</button>
+    <span class="knob" aria-hidden="true"></span>
   </div>
-  <p class="fine">Only cleared views get paid · terms frozen when your clip is accepted</p>
+
+  <div id="p-creator" role="tabpanel" aria-labelledby="t-creator">
+    <h1>Get paid for views<br />that <span class="grad">actually stayed</span>.</h1>
+    <p class="lede">Post a clip. Twenty-four hours later, you're paid in USDC for every view that
+    survived — <strong>at the rate you were promised</strong>, straight to your wallet, without
+    chasing anyone for it.</p>
+    <div class="row">
+      <a class="btn pop" href="#how">See how you get paid</a>
+      <a class="btn ghost" href="#sides">What you're guaranteed →</a>
+    </div>
+    <p class="fine">Terms freeze when your clip is accepted · no contest, no placing</p>
+  </div>
+
+  <div id="p-brand" role="tabpanel" aria-labelledby="t-brand" hidden>
+    <h1>Stop paying for views<br />that <span class="grad">were never real</span>.</h1>
+    <p class="lede">You're charged only for views still there a day later. Bought views evaporate
+    before settlement, so <strong>you never buy them</strong> — and we don't take a cut of your
+    spend, so we don't profit when you do.</p>
+    <div class="row">
+      <a class="btn pop" href="#how">See how it works</a>
+      <a class="btn ghost" href="/architecture.html">Read the architecture →</a>
+    </div>
+    <p class="fine">Hard pool ceiling · per-creator caps · every decision independently verifiable</p>
+  </div>
 </div></section>
 
 <hr />
@@ -205,5 +228,31 @@
 </div></footer>
 
 </main>
+
+<script>
+// Progressive enhancement: both panels are real content in the HTML, so the
+// page is complete with JavaScript off — the toggle only hides one.
+(function () {
+  var tabs = [document.getElementById('t-creator'), document.getElementById('t-brand')];
+  var wrap = document.querySelector('.toggle');
+  function select(i) {
+    tabs.forEach(function (t, n) {
+      var panel = document.getElementById(t.getAttribute('aria-controls'));
+      t.setAttribute('aria-selected', String(n === i));
+      panel.hidden = n !== i;
+    });
+    wrap.dataset.on = i === 0 ? 'creator' : 'brand';
+  }
+  tabs.forEach(function (t, i) {
+    t.addEventListener('click', function () { select(i); });
+    t.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        e.preventDefault(); var n = i === 0 ? 1 : 0; tabs[n].focus(); select(n);
+      }
+    });
+  });
+  wrap.dataset.on = 'creator';
+})();
+</script>
 </body>
 </html>

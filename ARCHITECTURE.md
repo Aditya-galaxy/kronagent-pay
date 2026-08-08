@@ -122,6 +122,31 @@ tests over generated inputs (`policy.properties.test.ts`,
 | **I16** | No payout amount is ever negative, however the view count moves |
 | **I17** | A model output can never raise a cap or widen a rate band |
 | **I18** | Money never passes through a float — bigint micro-USDC end to end, including on the way to storage |
+| **I19** | The settlement wallet is derived from the network, never configured alongside it |
+| **I20** | Broadcasting and permitting mainnet are separate decisions; neither implies the other |
+| **I21** | No verdict the agent can return releases money — its strongest outcome is a delay |
+
+I19 and I20 exist because two settings that must agree will eventually
+disagree. A Circle agent wallet lives on exactly one network, so a wallet
+configured independently of the network makes the dangerous state
+expressible — mainnet armed while still pointed at the testnet wallet — and
+that state does not fail until the first payout, which is the one carrying
+money. Deriving one from the other removes the configuration rather than
+validating it.
+
+Splitting broadcast from arming fixes the inverse problem: a single flag meant
+the only way to settle a real *testnet* payout was to set the flag that also
+unlocked mainnet. Safety flags that force an unrelated unsafe change get
+turned on for the wrong reasons.
+
+I21 is what makes an untrusted model safe in the loop at all. The rate
+proposer can only suggest a number, and an out-of-band proposal is *refused*
+rather than clamped — clamping would hand a prompt-injected agent the
+operator's ceiling every time. The fraud investigator's strongest verdict is
+`hold`, which the gate would have paid without; an unreadable verdict becomes
+`watch` rather than `clear`, so a malformed response neither resolves in the
+submitter's favour nor freezes an honest creator's money. An attacker with
+total control of both gains the ability to pay slowly.
 
 I7 deserves a note: a policy engine that can throw is a policy engine that can
 be made to fail *open* by whoever catches the exception. Totality is a safety
