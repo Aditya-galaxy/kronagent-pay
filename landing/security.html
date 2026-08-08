@@ -14,11 +14,11 @@
 <body>
 
 <nav><div class="wrap">
-  <a class="brand" href="/">Merlin Clips</a>
+  <a class="brand" href="/"><span class="dot"></span>Merlin Clips</a>
+  <a class="l" href="/#how">How it works</a>
   <a class="l" href="/architecture.html">Architecture</a>
   <a class="l" href="/security.html" aria-current="page">Security</a>
   <a class="l opt" href="/testing.html">Testing</a>
-  <a class="l" href="/#claim">Claim priority →</a>
 </div></nav>
 
 <main>
@@ -108,6 +108,23 @@
     <tr><td class="mono">I8</td><td>It is deterministic — same inputs, same verdict</td></tr>
     <tr><td class="mono">I9</td><td>Policy is monotonic — tightening a limit never authorizes what the looser limit refused</td></tr>
     <tr><td class="mono">I10</td><td>Every decision names the control that produced it</td></tr>
+  </table>
+
+  <p style="margin-top:26px">The first ten govern any payment. These eleven govern campaigns
+  specifically — what a creator is owed, and what the agent may do about it.</p>
+  <table>
+    <tr><th>#</th><th>Invariant</th></tr>
+    <tr><td class="mono">I11</td><td>A clip settles under the terms it was accepted under, until the deadline</td></tr>
+    <tr><td class="mono">I12</td><td>Total payouts on a campaign never exceed its pool. Always</td></tr>
+    <tr><td class="mono">I13</td><td>Views already paid for never decrease, so no view is ever paid twice</td></tr>
+    <tr><td class="mono">I14</td><td>No payout without a preceding <span class="mono">auto_pay</span> decision</td></tr>
+    <tr><td class="mono">I15</td><td>No payout without a passing verdict on the clip</td></tr>
+    <tr><td class="mono">I16</td><td>No payout amount is ever negative, however the view count moves</td></tr>
+    <tr><td class="mono">I17</td><td>A model output can never raise a cap or widen a rate band</td></tr>
+    <tr><td class="mono">I18</td><td>Money never passes through a float — integer micro-USDC end to end, including into storage</td></tr>
+    <tr><td class="mono">I19</td><td>The settlement wallet is derived from the network, never configured alongside it</td></tr>
+    <tr><td class="mono">I20</td><td>Broadcasting and permitting mainnet are separate decisions; neither implies the other</td></tr>
+    <tr><td class="mono">I21</td><td>No verdict the agent can return releases money — its strongest outcome is a delay</td></tr>
   </table>
 
   <div class="note"><p><strong>I7 is a safety property, not a robustness nicety.</strong> An engine
