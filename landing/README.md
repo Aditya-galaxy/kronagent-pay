@@ -1,4 +1,4 @@
-# kronagent.dev
+# merlinclips.com
 
 Four static pages, one stylesheet, zero external requests — no fonts, no
 analytics, no CDN. Nothing we do not control can slow it down or block it.
@@ -21,7 +21,7 @@ analytics, no CDN. Nothing we do not control can slow it down or block it.
    because Stripe India is invite-only and restricted to registered
    businesses; individuals cannot accept international payments at all.
 2. Replace `POLAR_CHECKOUT_LINK_HERE` in `index.html` with the checkout URL.
-3. Deploy, point kronagent.dev at it, **then click the button yourself before
+3. Deploy, point merlinclips.com at it, **then click the button yourself before
    posting anywhere.** A dead checkout on the one post that gets traction is
    not recoverable.
 
@@ -31,7 +31,7 @@ analytics, no CDN. Nothing we do not control can slow it down or block it.
 npx vercel --prod
 ```
 
-Then in Spaceship DNS for kronagent.dev: delete the URL-forwarding record that
-currently 301s to kronagent.com, and add the records Vercel gives you. `.dev`
+Then in Spaceship DNS for merlinclips.com: delete the URL-forwarding record that
+currently 301s to merlinclips.com, and add the records Vercel gives you. `.dev`
 is on the HSTS preload list, so there is no http fallback — wait for the
 certificate to issue before sharing the link.

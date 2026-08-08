@@ -355,14 +355,14 @@ const server = Bun.serve({
   },
 });
 
-console.log(`kronagent-payouts console on http://localhost:${server.port}`);
+console.log(`merlinclips console on http://localhost:${server.port}`);
 
 const PAGE = /* html */ `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kronagent Payouts — pay only for views that survived</title>
+<title>Merlin Clips — pay only for views that survived</title>
 <style>
   :root {
     --bg:#0b0f17; --panel:#121826; --border:#1f2937; --text:#e5e7eb;
@@ -414,7 +414,7 @@ const PAGE = /* html */ `<!doctype html>
 </style>
 </head>
 <body><div class="wrap">
-  <h1>Kronagent Payouts</h1>
+  <h1>Merlin Clips</h1>
   <p class="sub">An AI agent can already pay. Nothing decides whether it <em>should</em>.
   Every button below runs the real policy engine, mandates, rolling budget and hash-chained
   ledger — the same code path the live agent uses against Circle's Agent Stack.</p>
