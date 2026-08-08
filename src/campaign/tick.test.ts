@@ -398,3 +398,41 @@ describe('the rate proposer, once it is wired in', () => {
     expect(result.investigationsHeld).toEqual([]);
   });
 });
+
+describe('two passes overlapping', () => {
+  test('spend is counted once, not once per pass', async () => {
+    // Found by failure injection, not by reading. The log correctly refused
+    // the duplicate payout event; the store recorded it anyway, because the
+    // append's return value was discarded. Spend against the pool doubled for
+    // the life of the process — and a replay from the log afterwards produced
+    // the right total, so nothing downstream would ever reveal it.
+    const { store, gate } = world(['a', 'b', 'c']);
+    const log = new EventLog(new MemoryBlobStore());
+    const { sent, executor } = spyExecutor();
+
+    await Promise.all([
+      runTick({ store, gate, oracle: oracleReturning(5_000n), executor, log }, { agentId: 'a', now: NOW }),
+      runTick({ store, gate, oracle: oracleReturning(5_000n), executor, log }, { agentId: 'a', now: NOW }),
+    ]);
+
+    // Three submissions, 1,000 confirmed views each at 1 USDC/1k = 3 USDC.
+    expect(store.spentOnCampaign('camp-1').toString()).toBe('3');
+    expect(store.payoutsFor('camp-1')).toHaveLength(3);
+    // The executor is reached twice per payout at this layer — runTick has no
+    // cross-pass lock. Circle's idempotency key is what stops real duplicate
+    // money here, and CampaignRuntime.tick keeps overlapping callers from
+    // getting this far in the first place.
+    expect(sent.length).toBeGreaterThanOrEqual(3);
+  });
+
+  test('the second pass reports the collision rather than claiming a payout', async () => {
+    const { store, gate } = world(['a']);
+    const log = new EventLog(new MemoryBlobStore());
+    const [first, second] = await Promise.all([
+      runTick({ store, gate, oracle: oracleReturning(5_000n), executor: new DryRunExecutor(), log }, { agentId: 'a', now: NOW }),
+      runTick({ store, gate, oracle: oracleReturning(5_000n), executor: new DryRunExecutor(), log }, { agentId: 'a', now: NOW }),
+    ]);
+    expect(first.paid + second.paid).toBe(1);
+    expect([...first.errors, ...second.errors].join()).toContain('concurrent pass');
+  });
+});

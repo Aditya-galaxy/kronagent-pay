@@ -1,4 +1,4 @@
-# Kronagent Pay — container for Google Cloud Run.
+# Merlin Clips — container for Google Cloud Run.
 #
 # Two competition requirements meet here: the base rules require the project to
 # run on Google Cloud Platform, and judges must be able to reach a working
