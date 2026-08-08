@@ -107,14 +107,15 @@ export class CampaignRuntime {
     // With a wallet configured, settlement goes through the real CLI — in
     // estimate mode unless mainnet is explicitly armed, so the path is
     // exercised end to end before it can move anything.
-    this.executor =
-      options.executor ??
-      (this.env.CAMPAIGN_WALLET
-        ? new CircleCliExecutor({
-            fromAddress: this.env.CAMPAIGN_WALLET,
-            dryRun: this.env.ALLOW_MAINNET !== 'true',
-          })
-        : new DryRunExecutor());
+    //
+    // The wallet is chosen *by* the network rather than configured beside it.
+    // A Circle agent wallet exists on one network: the testnet wallet cannot
+    // send on BASE and the mainnet wallet cannot send on BASE-SEPOLIA. Two
+    // independent settings would make the dangerous mistake expressible —
+    // arming mainnet while still pointing at the testnet wallet, or the
+    // reverse — and neither fails in an obvious way. Selecting one from the
+    // other means the mismatch cannot be configured at all.
+    this.executor = options.executor ?? this.buildExecutor();
     this.mandates = options.mandates ?? new MandateStore();
     // Real when the keys are present, absent otherwise — never a stub that
     // answers zero or always passes. Every consumer reports the absence.
@@ -135,6 +136,43 @@ export class CampaignRuntime {
         new RollingWindowBudget({ defaultCapUsdc: this.env.WINDOW_BUDGET_USDC ?? '25.00' }),
       ),
     );
+  }
+
+  /**
+   * The executor, with the sending wallet chosen by the network.
+   *
+   * Two separate flags, because they are two separate questions and the old
+   * single flag conflated them. `ALLOW_MAINNET` answers *which network is this
+   * deployment on* — it selects the wallet and unlocks mainnet chains in the
+   * policy engine. `BROADCAST` answers *should a decision actually move money*
+   * — without it the CLI runs with `--estimate`, exercising the real wallet
+   * and the real chain but stopping short of broadcasting.
+   *
+   * Conflated, the only way to broadcast a testnet payout was to set the flag
+   * that also unlocked mainnet. Separated, testnet can settle for real while
+   * mainnet stays refused, which is the combination we actually want.
+   *
+   * Fails closed at construction rather than at the first payout, because the
+   * first payout is the one carrying money.
+   */
+  private buildExecutor(): PayoutExecutor {
+    const onMainnet = this.env.ALLOW_MAINNET === 'true';
+    const wallet = (
+      onMainnet ? this.env.MAINNET_CAMPAIGN_WALLET : this.env.CAMPAIGN_WALLET
+    )?.trim();
+
+    if (onMainnet && !wallet) {
+      throw new Error(
+        'ALLOW_MAINNET=true but MAINNET_CAMPAIGN_WALLET is unset. Refusing to start: ' +
+          'settling on mainnet from the testnet wallet is not a recoverable mistake.',
+      );
+    }
+    if (!wallet) return new DryRunExecutor();
+
+    return new CircleCliExecutor({
+      fromAddress: wallet,
+      dryRun: this.env.BROADCAST !== 'true',
+    });
   }
 
   /** Replay the log into the store. Idempotent, so every route may call it. */
