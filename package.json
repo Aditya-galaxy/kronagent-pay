@@ -6,7 +6,8 @@
   "description": "Governed autonomous payments on Circle Agent Stack: the deterministic layer that decides whether an AI agent's USDC payment should happen",
   "scripts": {
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "sweep": "bun run src/sweep.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",

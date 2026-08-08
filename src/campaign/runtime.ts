@@ -37,7 +37,8 @@ import { openCampaign, submitClip } from './intake';
 import { oracleFromEnv } from './oracle';
 import { verifierFromEnv } from './verifier';
 import { agentFromEnv, type FraudInvestigator, type RateProposer } from './agent';
-import { DryRunExecutor, runTick, type PayoutExecutor, type TickResult, type ViewOracle } from './tick';
+import { acquireTickLease, DEFAULT_LEASE_WINDOW_MS } from './lease';
+import { DryRunExecutor, runTick, skippedTick, type PayoutExecutor, type TickResult, type ViewOracle } from './tick';
 
 /** No oracle configured yet: report "cannot tell", never a fabricated count. */
 export const NULL_ORACLE: ViewOracle = { fetch: async () => undefined };
@@ -75,6 +76,8 @@ export interface CampaignRuntimeOptions {
   mandates?: MandateStore;
   /** Injectable so a test can run the loop without a network. */
   agent?: { rate?: RateProposer; investigator?: FraudInvestigator };
+  /** Lease window. Two passes inside one window: the second is refused. */
+  leaseWindowMs?: number;
   env?: Record<string, string | undefined>;
 }
 
@@ -122,6 +125,9 @@ export class CampaignRuntime {
     this.counts = options.counts ?? oracleFromEnv(this.env);
     this.verifier = options.verifier ?? verifierFromEnv(this.env);
     this.agent = options.agent ?? agentFromEnv(this.env);
+    this.leaseWindowMs =
+      options.leaseWindowMs ??
+      (this.env.LEASE_WINDOW_MS ? Number(this.env.LEASE_WINDOW_MS) : DEFAULT_LEASE_WINDOW_MS);
 
     this.gate = new PayoutGate(
       this.store,
@@ -230,8 +236,23 @@ export class CampaignRuntime {
   }
 
   private inFlightTick?: Promise<TickResult>;
+  private readonly leaseWindowMs: number;
 
   private async runOneTick(now?: Date): Promise<TickResult> {
+    const at = now ?? new Date();
+
+    // Across instances, not just within one. Claimed before `ready()` so a
+    // losing instance does no work at all, not merely no settlement.
+    const lease = await acquireTickLease(this.blobs, {
+      now: at,
+      windowMs: this.leaseWindowMs,
+      holder: this.env.AGENT_ID ?? 'campaign-agent',
+    });
+    if (!lease.acquired) {
+      this.lastTick = skippedTick(at, lease.reason ?? 'lease not acquired');
+      return this.lastTick;
+    }
+
     await this.ready();
     this.lastTick = await runTick(
       {
@@ -242,7 +263,7 @@ export class CampaignRuntime {
         log: this.log,
         agent: this.agent,
       },
-      { agentId: this.env.AGENT_ID ?? 'campaign-agent', now },
+      { agentId: this.env.AGENT_ID ?? 'campaign-agent', now: at },
     );
     return this.lastTick;
   }

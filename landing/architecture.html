@@ -36,7 +36,7 @@
   <h2>The path a payment takes</h2>
   <div class="term"><span class="c-dim"> the model — untrusted, reads attacker-controlled text</span>
         <span class="c-dim">│</span>
-        <span class="c-dim">│  "pay https://vendor.example"</span>
+        <span class="c-dim">│  "pay creator 0xa1b2 for clip 4f2a"</span>
         <span class="c-dim">▼</span>
  <span class="c-acc">one function</span>  <span class="c-dim">← the only seam your runtime needs</span>
         <span class="c-dim">│</span>
@@ -67,14 +67,14 @@
     <div class="item"><div class="k">Determinism</div><div>
       <h3>No model in the decision path</h3>
       <p>The engine is a few hundred lines with no dependencies, no network calls, and no
-      configurable strictness. It cannot be influenced by a web page the agent read, by a vendor’s
+      configurable strictness. It cannot be influenced by a web page the agent read, by a creator’s
       response body, or by anything else an attacker controls.</p>
       <p>It is small because it is the part that has to be audited, and every line in it is a line
       someone must be willing to defend after a payment goes wrong.</p></div></div>
 
     <div class="item"><div class="k">Ordering</div><div>
       <h3>Pricing precedes authorizing</h3>
-      <p>An x402 purchase names a URL, not an amount — the price comes from the vendor’s own
+      <p>An x402 purchase names a URL, not an amount — the price comes from the counterparty’s own
       response. So the gate resolves the price itself rather than trusting a number the agent
       supplied, because the agent read the listing and the listing is attacker-influenced.</p>
       <p>If pricing fails, the payment is held. <em>“The price lookup failed so we paid anyway”</em>
@@ -82,13 +82,13 @@
 
     <div class="item"><div class="k">Fail closed</div><div>
       <h3>Every unknown resolves to not paying</h3>
-      <p>Unknown vendor, unreadable permission, unparseable amount, missing budget, mainnet without
+      <p>Unknown counterparty, unreadable permission, unparseable amount, missing budget, mainnet without
       an explicit opt-in — all converge on hold or block. A wrongly-held payment costs someone’s
       attention. A wrongly-sent one is irreversible.</p></div></div>
 
     <div class="item"><div class="k">Delegation</div><div>
       <h3>Permission is granted, not configured</h3>
-      <p>A permission names a vendor, a per-payment cap, an accountable owner, an end date, and the
+      <p>A permission names a counterparty, a per-payment cap, an accountable owner, an end date, and the
       reason it was granted. The reason matters: six months on, that sentence is the only thing that
       can answer whether it should still exist.</p>
       <p>The person who granted it and the person accountable for it are stored separately. The
