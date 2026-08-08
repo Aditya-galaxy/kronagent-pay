@@ -36,6 +36,7 @@ import { CircleCliExecutor } from './executor';
 import { openCampaign, submitClip } from './intake';
 import { oracleFromEnv } from './oracle';
 import { verifierFromEnv } from './verifier';
+import { agentFromEnv, type FraudInvestigator, type RateProposer } from './agent';
 import { DryRunExecutor, runTick, type PayoutExecutor, type TickResult, type ViewOracle } from './tick';
 
 /** No oracle configured yet: report "cannot tell", never a fabricated count. */
@@ -72,6 +73,8 @@ export interface CampaignRuntimeOptions {
   oracle?: ViewOracle;
   executor?: PayoutExecutor;
   mandates?: MandateStore;
+  /** Injectable so a test can run the loop without a network. */
+  agent?: { rate?: RateProposer; investigator?: FraudInvestigator };
   env?: Record<string, string | undefined>;
 }
 
@@ -88,6 +91,9 @@ export class CampaignRuntime {
   private readonly tracking = new MemoryTrackingStore();
   private readonly counts?: CountOracle;
   private readonly verifier?: ClipVerifier;
+  /** Empty without credentials, and empty is a working configuration: the
+   *  tick stays purely deterministic rather than falling back to a stub. */
+  private readonly agent: { rate?: RateProposer; investigator?: FraudInvestigator };
   private loaded = false;
   private lastTick?: TickResult;
 
@@ -114,6 +120,7 @@ export class CampaignRuntime {
     // answers zero or always passes. Every consumer reports the absence.
     this.counts = options.counts ?? oracleFromEnv(this.env);
     this.verifier = options.verifier ?? verifierFromEnv(this.env);
+    this.agent = options.agent ?? agentFromEnv(this.env);
 
     this.gate = new PayoutGate(
       this.store,
@@ -163,6 +170,7 @@ export class CampaignRuntime {
         oracle: this.oracle,
         executor: this.executor,
         log: this.log,
+        agent: this.agent,
       },
       { agentId: this.env.AGENT_ID ?? 'campaign-agent', now },
     );
