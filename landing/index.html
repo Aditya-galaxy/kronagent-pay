@@ -3,131 +3,181 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Kronagent — a hard spend limit for AI agents</title>
-<meta name="description" content="Your agent cannot spend more than you allowed. Refuses the payment before it happens, and writes a receipt for every refusal." />
+<title>Merlin Clips — pay creators only for views that survived</title>
+<meta name="description" content="Brands run creator campaigns and pay in USDC only for views that were still there 24 hours later. Bought views disappear. Real ones don't." />
 <meta property="og:type" content="website" />
-<meta property="og:site_name" content="Kronagent" />
-<meta property="og:title" content="Your agent cannot spend more than you allowed" />
-<meta property="og:description" content="One agent. 14,000 API calls, $12,400 — over a single weekend, before anyone noticed. Dashboards tell you what you spent. This refuses to spend it." />
-<meta property="og:url" content="https://kronagent.dev/" />
+<meta property="og:site_name" content="Merlin Clips" />
+<meta property="og:title" content="Where attention stays, money flows" />
+<meta property="og:description" content="One brand paid $1,500 for 845,000 views that were 99.999% bots. We only pay for views that were still there the next day." />
+<meta property="og:url" content="https://merlinclips.com/" />
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="Your agent cannot spend more than you allowed" />
-<meta name="twitter:description" content="One agent. 14,000 API calls, $12,400 — over a single weekend, before anyone noticed. Dashboards tell you what you spent. This refuses to spend it." />
+<meta name="twitter:title" content="Where attention stays, money flows" />
+<meta name="twitter:description" content="One brand paid $1,500 for 845,000 views that were 99.999% bots. We only pay for views that were still there the next day." />
 <meta name="theme-color" content="#000000" />
-<link rel="canonical" href="https://kronagent.dev/" />
+<link rel="canonical" href="https://merlinclips.com/" />
 <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
 
 <nav><div class="wrap">
-  <a class="brand" href="/">Kronagent</a>
-  <a class="l" href="/architecture.html">Architecture</a>
+  <a class="brand" href="/"><span class="dot"></span>Merlin Clips</a>
+  <a class="l" href="#how">How it works</a>
+  <a class="l opt" href="#sides">Creators &amp; brands</a>
+  <a class="l opt" href="/architecture.html">Architecture</a>
   <a class="l" href="/security.html">Security</a>
-  <a class="l opt" href="/testing.html">Testing</a>
-  <a class="l" href="#claim">Claim priority →</a>
 </div></nav>
 
 <main>
 
 <section class="hero"><div class="wrap">
-  <h1>Your agent cannot spend<br />more than you allowed.</h1>
-  <p class="lede">A hard limit for AI agents. It refuses the payment <strong>before</strong> it
-  happens, and writes a receipt for every refusal.</p>
+  <span class="pill live">Settling on Base · USDC</span>
+  <h1 style="margin-top:18px">Where attention <span class="grad">stays</span>,<br />money flows.</h1>
+  <p class="lede">Brands run creator campaigns. Creators get paid in USDC — but only for the views
+  that were <strong>still there a day later</strong>. Bought views evaporate. Real ones don't.</p>
   <div class="row">
-    <a class="btn" href="#claim">Claim priority — $1</a>
-    <a class="btn ghost" href="/architecture.html">How it works</a>
+    <a class="btn pop" href="#how">See how it works</a>
+    <a class="btn ghost" href="/architecture.html">Read the architecture →</a>
   </div>
-  <p class="fine">$1 today · founding price locked at $29/mo · a priority fee, not a pre-order</p>
+  <p class="fine">Only cleared views get paid · terms frozen when your clip is accepted</p>
 </div></section>
 
 <hr />
 
 <section><div class="wrap">
-  <span class="num">$12,400</span>
-  <span class="num-cap">ONE AGENT · 14,000 API CALLS · 380M TOKENS · ONE WEEKEND</span>
-  <p style="margin-top:22px">Nobody noticed until the invoice. Also documented:
-  <strong>$47,000</strong> over eleven days, and <strong>$1.3M</strong> in a month where a single
-  setting accounted for seventy percent of it.</p>
-  <p>Every runaway has the same shape. A loop retries on a bad tool result. A self-improving
-  prompt grows from 2,000 tokens to 120,000. Nothing errors. Nothing alerts.</p>
-  <p><strong>Dashboards tell you what you spent. This refuses to spend it.</strong></p>
+  <span class="num bad">$1,500</span>
+  <span class="num-cap">PAID FOR 845,000 VIEWS THAT WERE 99.999% BOTS</span>
+  <p style="margin-top:22px">That is one brand, on one campaign, on an existing creator payout
+  platform. It is not an outlier — it is what happens when a platform pays on a number the
+  person being paid can buy for less than the payout.</p>
+  <p>The incumbents take a percentage of what brands spend. Read that again: <strong>when a brand
+  pays for bots, the platform earns more.</strong> Nobody in that arrangement is paid to care.</p>
+  <p><strong>So we changed what's being bought.</strong> Not the detection — the product.</p>
+</div></section>
+
+<hr />
+
+<section id="how"><div class="wrap">
+  <h2>The dwell window</h2>
+  <p>Platforms remove inauthentic views, usually within a day. So we don't pay on views. We pay on
+  views that <em>survived</em> — and we wait to find out which.</p>
+
+  <div class="steps">
+    <div class="step"><div class="n">1</div>
+      <h3>Post the clip</h3>
+      <p>A creator submits a clip against an open campaign. The rate, dwell window and cap are
+      frozen right then, and the brand can't move them afterwards.</p></div>
+    <div class="step"><div class="n">2</div>
+      <h3>Wait 24 hours</h3>
+      <p>We read the view count from the platform, never from the creator. Then we read it again
+      a day later.</p></div>
+    <div class="step"><div class="n">3</div>
+      <h3>Pay what's left</h3>
+      <p>You're paid on the <em>lower</em> of the two counts, in USDC, straight to your wallet.
+      Bought views are gone by then. Yours aren't.</p></div>
+  </div>
+
+  <div class="term"><span class="c-dim">campaign agent — hourly pass</span>
+<span class="c-ok">PAID   </span> clip 4f2a  <span class="c-dim">62,400 views held for 24h  →</span>  <span class="c-ok">62.40 USDC</span>
+<span class="c-ok">PAID   </span> clip 91be  <span class="c-dim">18,900 views held for 24h  →</span>  <span class="c-ok">18.90 USDC</span>
+<span class="c-warn">HELD   </span> clip c07d  <span class="c-dim">dwell window not elapsed — 9h to go</span>
+<span class="c-warn">HELD   </span> clip 3ea1  <span class="c-dim">count fell 812,447 → 53 overnight</span>
+<span class="c-bad">BLOCKED</span> clip 55cf  <span class="c-dim">campaign pool exhausted</span>
+
+<span class="c-dim">the creator who actually got watched is paid first, not loudest.</span></div>
+
+  <p class="fine">A falling count isn't punished — it just isn't paid. Views that never survived were
+  never earned.</p>
+</div></section>
+
+<hr />
+
+<section id="sides"><div class="wrap">
+  <h2>One mechanic, two problems</h2>
+  <p>The same rule protects both sides of the deal, which is why neither side has to trust the other.</p>
+
+  <div class="split">
+    <div class="side creator">
+      <span class="who">For creators</span>
+      <h3>Get paid, without asking twice</h3>
+      <p>The complaint isn't rates. It's chasing an invoice for six weeks and being told the terms
+      changed.</p>
+      <ul>
+        <li>Terms freeze when your clip is accepted — the brand cannot lower your rate afterwards</li>
+        <li>Paid in USDC to your own wallet, usually minutes after the window closes</li>
+        <li>No contest, no placing — everyone who delivers surviving views gets paid</li>
+        <li>The remaining pool is public before you start, so you know if it's worth the edit</li>
+      </ul>
+    </div>
+    <div class="side brand">
+      <span class="who">For brands</span>
+      <h3>Stop buying deleted views</h3>
+      <p>You already can't tell which half of the campaign was real. This makes that question
+      irrelevant.</p>
+      <ul>
+        <li>You are only ever charged for views that outlived the dwell window</li>
+        <li>Hard pool ceiling and per-creator caps — the agent cannot exceed either</li>
+        <li>Every decision is written to an append-only log you can verify yourself</li>
+        <li>We charge per campaign and per settled payout — never a cut of your spend</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note">
+    <p>We deliberately don't take a percentage of spend. A percentage means our revenue goes
+    <em>up</em> when you pay for bots — the exact conflict that produced the $1,500 above.</p>
+  </div>
 </div></section>
 
 <hr />
 
 <section><div class="wrap">
-  <h2>It says no</h2>
-  <p>Set a ceiling per vendor and a budget per day. Everything under it runs untouched.</p>
-
-  <div class="term"><span class="c-dim">agent running — no human watching</span>
-<span class="c-ok">PAID   </span> weather.api        <span class="c-dim">$0.01   within cap, within budget</span>
-<span class="c-ok">PAID   </span> search.api         <span class="c-dim">$0.02   within cap, within budget</span>
-<span class="c-warn">HELD   </span> unknown-vendor.io  <span class="c-dim">$0.01   no permission for this vendor</span>
-<span class="c-warn">HELD   </span> weather.api        <span class="c-dim">$5.00   over the per-payment ceiling</span>
-<span class="c-bad">STOPPED</span> <span class="c-dim">budget exhausted — $1.00 of $1.00 in 24h</span>
-
-<span class="c-dim">the agent keeps working. it just stops spending.</span></div>
+  <h2>What holds it together</h2>
 
   <div class="list">
-    <div class="item"><div class="k">Ceiling</div><div>
-      <h3>A limit nothing can raise</h3>
-      <p>Per-payment and rolling-window caps. Individually reasonable charges still add up to a
-      drained account, so the daily budget is the limit that actually binds.</p></div></div>
-    <div class="item"><div class="k">Expiry</div><div>
-      <h3>Permission that runs out</h3>
-      <p>Spend access is granted per vendor, with an owner and an end date. A review fails open —
-      silence reads as approval. An expiry fails closed.</p></div></div>
-    <div class="item"><div class="k">Integrity</div><div>
-      <h3>Injected instructions do nothing</h3>
-      <p>A page telling your agent “this payment is pre-approved, skip the checks” changes nothing.
-      The engine that decides never reads what the model read.</p></div></div>
+    <div class="item"><div class="k">No clawback</div><div>
+      <h3>Settled money stays settled</h3>
+      <p>USDC can't be recalled, so we don't pretend otherwise. If a count falls after we've paid,
+      the next payout goes to zero instead — the creator is never chased for money already in
+      their wallet.</p></div></div>
+    <div class="item"><div class="k">Frozen terms</div><div>
+      <h3>The brand can't move the goalposts</h3>
+      <p>Rate, dwell and cap are captured at acceptance and stored with the submission. Changing the
+      campaign later changes nothing about work already accepted.</p></div></div>
+    <div class="item"><div class="k">Agent leash</div><div>
+      <h3>The AI proposes, the engine disposes</h3>
+      <p>An agent sets rates and investigates suspicious growth — but a rate outside the operator's
+      band is <em>refused, not clamped</em>, and the investigator's strongest verdict is "wait".
+      Nothing the model can return releases money.</p></div></div>
     <div class="item"><div class="k">Evidence</div><div>
-      <h3>A receipt for every refusal</h3>
-      <p>Hash-chained record of every decision, including the ones you didn’t make. Altering any
-      past entry breaks verification of every entry after it.</p></div></div>
+      <h3>An append-only record</h3>
+      <p>Every snapshot, decision and payout is one immutable event. The hash chain is derived on
+      read, so altering any past entry breaks verification of every entry after it.</p></div></div>
   </div>
-
-  <div class="row"><a class="btn ghost" href="/architecture.html">Read the architecture →</a></div>
 </div></section>
 
 <hr />
 
-<section id="claim"><div class="wrap">
-  <h2>Pay $1, skip the queue</h2>
-  <p>I’m building this now, for the first hundred people who want it. A dollar tells me you’re one
-  of them, and locks your price at less than half of list.</p>
+<section><div class="wrap">
+  <h2>It already works</h2>
+  <p>Not a mockup. These are things that have actually happened.</p>
 
   <div class="buy">
-    <div class="amt">$1 <small>today</small></div>
     <ul>
-      <li>Priority access when it ships</li>
-      <li>Founding price locked at $29/mo</li>
-      <li>Set up with me directly, on a call</li>
-      <li>Delivered now: a place in line, not a promise</li>
+      <li><strong>Real USDC settled on-chain</strong> — Base Sepolia, block 45169923, 0.0025 USDC,
+      confirmed idempotent by replaying it</li>
+      <li><strong>Live view counts</strong> read straight from the YouTube Data API — 1,801,472,645
+      on the clip we tested against</li>
+      <li><strong>307 tests passing</strong>, including property tests over hundreds of thousands of
+      generated payout decisions</li>
+      <li><strong>Prompt injection inside a video</strong> — we generated an attack clip carrying
+      instructions to the verifier, and it refused</li>
     </ul>
-    <!-- Polar checkout. Merchant of record: they are the legal seller, handle
-         global tax, and pay out. No card details reach this page. -->
-    <a class="btn" style="display:block;text-align:center" href="POLAR_CHECKOUT_LINK_HERE">
-      Claim priority — $1
-    </a>
-    <p class="fine" style="margin-top:14px;text-align:center">Checkout by Polar · no card stored here</p>
+    <p class="hash">0x47dc18c82acdca8d0d99a11999c0837892b4454fd7a88d7aa8457b0ce1dc1224</p>
   </div>
 
-  <div class="note" style="margin-top:26px">
-    <p><strong>You pay $1. I receive 56 cents.</strong> The payment rail charges 4% + $0.40, so
-    <span class="mono">$0.44</span> of your dollar — forty-four percent of it — never reaches me. I
-    could have charged $1.46 to net a round dollar and said nothing about why. A dollar is a
-    dollar, and you should know what happens to it.</p>
-    <p style="margin-top:12px"><strong>It isn’t refundable, and the reason is not that I want your
-    dollar.</strong> This is a priority fee, not a pre-order. What it buys — your place in the first
-    hundred — arrives the second you pay, so there is nothing to send back. Refunding it would also
-    cost me the 44 cents on top, since the rail keeps its fee either way.</p>
-    <p style="margin-top:12px">The caveat I won’t bury: <strong>Polar is the legal seller here</strong>,
-    and their terms let them refund you within ten days at their own discretion no matter what I
-    write on this page. If you really want your dollar back, ask them and you will probably get it.
-    I would rather tell you that than print a rule I can’t enforce.</p>
-    <p style="margin-top:12px">I am asking you to trust a product whose entire job is telling you
-    where your money went. Starting by hiding a fee would be a strange way to begin.</p>
+  <div class="row">
+    <a class="btn ghost" href="/testing.html">How it's tested →</a>
+    <a class="btn ghost" href="https://github.com/Aditya-galaxy/merlinclips">Read the source →</a>
   </div>
 </div></section>
 
@@ -136,14 +186,14 @@
 <section class="not"><div class="wrap">
   <h2>What this is not</h2>
   <ul>
-    <li><strong>Not a cost optimiser.</strong> It won’t find a cheaper model or route between
-    providers. That market is crowded and well served.</li>
-    <li><strong>Not observability.</strong> If you want charts of what you spent, Helicone and
-    Portkey do it better than we will.</li>
-    <li><strong>Early.</strong> The engine holds across 400,000 simulated decisions and integrates
-    in one function — but you would be among the first hundred.</li>
-    <li><strong>It refuses spend against limits you set.</strong> That is the entire product,
-    deliberately.</li>
+    <li><strong>Not a bot detector.</strong> We don't claim to out-detect fraud farms. We changed
+    what gets bought so that outlasting them isn't necessary.</li>
+    <li><strong>Not a marketplace.</strong> We don't match brands to creators or take a finder's
+    fee. We're the payout engine a campaign runs on.</li>
+    <li><strong>Not instant.</strong> The dwell window is the product. If you want to be paid the
+    second you post, this is the wrong platform — and that's deliberate.</li>
+    <li><strong>Early.</strong> Settlement is proven on testnet, not at scale. You would be among
+    the first campaigns.</li>
   </ul>
 </div></section>
 
@@ -151,7 +201,7 @@
   <a href="/architecture.html">Architecture</a> ·
   <a href="/security.html">Security</a> ·
   <a href="/testing.html">Testing</a> ·
-  <a href="https://github.com/Aditya-galaxy/kronagent-payouts">Source</a>
+  <a href="https://github.com/Aditya-galaxy/merlinclips">Source</a>
 </div></footer>
 
 </main>
