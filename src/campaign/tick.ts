@@ -226,7 +226,23 @@ export async function runTick(
           txHash: outcome.txHash,
           explorerUrl: outcome.explorerUrl,
         };
-        await log?.append({ type: 'payout_settled', payout: settled }, now);
+        // The append's return value is the authority on whether *this* pass is
+        // the one that recorded the payout. Ignoring it double-counts spend
+        // against the pool whenever two passes overlap: the log correctly
+        // refuses the duplicate, and the store then records it anyway.
+        //
+        // That breaches I12 for the life of the process, and it is invisible
+        // — replaying the log afterwards produces the right total, so the
+        // corruption exists only in the instance actually making decisions.
+        const written = log
+          ? await log.append({ type: 'payout_settled', payout: settled }, now)
+          : true;
+        if (!written) {
+          errors.push(
+            `${submission.submissionId}: already settled by a concurrent pass — not counted again`,
+          );
+          continue;
+        }
         store.recordPayout(settled);
         paid += 1;
         total = total.plus(decision.amountUsdc);

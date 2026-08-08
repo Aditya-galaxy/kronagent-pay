@@ -199,7 +199,39 @@ export class CampaignRuntime {
     return this.log.chain();
   }
 
+  /**
+   * One pass, and never two at once in this process.
+   *
+   * `/api/tick` is an HTTP endpoint driven by Cloud Scheduler, which retries.
+   * A retry arriving while the first pass is still working — or a human
+   * curling it impatiently — starts a second pass that reads the same
+   * `viewsPaidTo` and calls the executor for payouts the first pass has
+   * already sent. The ledger no longer double-counts those, but the send
+   * itself still happens, and the only thing preventing real duplicate money
+   * at that point is Circle's idempotency key.
+   *
+   * That key does work — a replay returns the same transaction hash — but
+   * "we called the payments API twice and something downstream saved us" is a
+   * poor place for the guarantee to live. Overlapping callers share the
+   * in-flight pass instead, so each caller gets the same honest result and
+   * the executor is called once.
+   *
+   * This is per-instance. Two Cloud Run instances ticking simultaneously
+   * still reach the executor twice, and there the idempotency key genuinely
+   * is the defence. Bounding it properly needs a lease in the blob store,
+   * which is worth doing before this runs at more than demo scale.
+   */
   async tick(now?: Date): Promise<TickResult> {
+    if (this.inFlightTick) return this.inFlightTick;
+    this.inFlightTick = this.runOneTick(now).finally(() => {
+      this.inFlightTick = undefined;
+    });
+    return this.inFlightTick;
+  }
+
+  private inFlightTick?: Promise<TickResult>;
+
+  private async runOneTick(now?: Date): Promise<TickResult> {
     await this.ready();
     this.lastTick = await runTick(
       {

@@ -118,13 +118,15 @@ The machine-readable contract is [openapi.json](openapi.json), served at `/opena
 
 | Component | State |
 |---|---|
-| Payout gate, dwell mechanic, rate band, terms, persistence, tick, executor | **Done** — 221 tests, typecheck clean |
+| Payout gate, dwell mechanic, rate band, terms, persistence, tick, executor | **Done** — 313 tests, typecheck clean |
 | `/api/verify` + OpenAPI spec | **Done** — 402 handshake verified against a running server |
-| Agent Marketplace listing | Blocked on a confirmed payout wallet |
-| Gemini clip verifier | Blocked on `GOOGLE_API_KEY` |
-| YouTube + X view oracles | Blocked on API keys |
-| Real on-chain payout + Basescan proof | Blocked on Circle Terms acceptance |
-| Cloud Run deployment | Ready — `./deploy.sh` |
+| Agent loop — rate allocation and fraud investigation | **Done** — proposes and investigates; neither can release money |
+| Gemini clip verifier | **Done** — runs on Vertex via ADC, no API key |
+| YouTube view oracle | **Done** — verified live against the Data API |
+| Real on-chain payout + Basescan proof | **Done** — Base Sepolia `0x47dc18c8…1224`, replay-confirmed idempotent |
+| X view oracle | Not built — `XOracleUnavailable` is returned rather than a guess |
+| Agent Marketplace listing | Blocked on a funded mainnet wallet |
+| Cloud Run deployment | Ready — `./deploy.sh`, preflight refuses without the state bucket |
 
 ```bash
 bun install
@@ -132,15 +134,45 @@ bun test
 bun run src/server.ts     # http://localhost:8080
 ```
 
+### Configuration
+
+Gemini runs through **Application Default Credentials**, not an API key — `gcloud auth application-default login`, with the quota project set to the one billing it.
+
+| Variable | Meaning |
+|---|---|
+| `YOUTUBE_API_KEY` | View counts. Absent means the oracle reports *cannot tell*, never zero. |
+| `GOOGLE_GENAI_USE_VERTEXAI` / `GOOGLE_CLOUD_PROJECT` | Vertex via ADC. |
+| `CAMPAIGN_WALLET` | Circle agent wallet on **testnet**. |
+| `MAINNET_CAMPAIGN_WALLET` | Circle agent wallet on **mainnet**. |
+| `TICK_SECRET` | Guards `/api/tick`. Unset returns 503 — the service is public by requirement, and this endpoint must not be. |
+| `GCS_BUCKET` | Durable state. Without it the store is in-memory on a service that scales to zero. |
+
+Two flags govern real money, and **both** are required for any of it to move on mainnet:
+
+| Flag | Answers |
+|---|---|
+| `ALLOW_MAINNET` | *Which network is this deployment on?* Selects the wallet and stops the policy engine refusing mainnet chains. |
+| `BROADCAST` | *Should a decision actually move money?* Without it the CLI runs `--estimate` — real wallet, real chain, no broadcast. |
+
+They are deliberately separate. Conflated, the only way to settle a real *testnet* payout was to set the flag that also unlocked *mainnet*. The wallet is chosen **by** the network rather than configured beside it, so arming mainnet while still pointed at the testnet wallet is not an expressible configuration — the runtime refuses to start. `deploy.sh` never forwards either flag: a deploy lands estimate-only, and arming real money is a decision someone makes rather than one inherited from a shell.
+
 **Scope, stated plainly.** YouTube and X only — Instagram, Facebook and TikTok need Meta/TikTok app review, which runs 2–6 weeks. We do not claim to detect bots better than anyone; we bound the damage and make every decision auditable. Payouts at scale are regulated, and this operates at demo scale.
 
 ## Pre-existing work, disclosed
 
-Per the competition's *New Projects Only* requirement:
+Per the competition's *New Projects Only* requirement. Two of these are things a judge would find in the git history regardless, and finding them unmentioned would be worse than reading them here.
 
-- **This project was created on 2026-08-04**, inside the submission period. Every line of source here is new.
+- **This project was created on 2026-08-04**, inside the submission period. Every line of source is new.
+
+- **It pivoted on 2026-08-05, in the open.** The first day's commits build a hard spend limit for AI agents. The campaign payout engine lands the next day, and the product became what it is now. That early history — and the original landing copy — is still in the log, still describing the old thing. This is not an older project repurposed to fit the brief; it is one week of work changing its mind after the research said the first idea was a vitamin rather than a painkiller. The decision layer written on day one survives underneath: `PaymentPolicyEngine`, the mandates and the rolling budget are the same code, now governing campaign payouts instead of agent API spend.
+
+- **The repository was renamed on 2026-08-08**, `kronagent-payouts` → `merlinclips`, when the domain was registered. Same repository, same history — the rename changed names and URLs and nothing else.
+
 - **[Circle Agent Stack starter kits](https://github.com/circlefin/agent-stack-starter-kits)** (Apache-2.0) — we build on the `google-adk` kit's tool definitions and its `ApprovalFn` seam. We replace its terminal-prompt approval implementation; we do not vendor its code.
-- **[Merlin Clips](https://github.com/Aditya-galaxy/Merlin Clips)**, by the same author, is a cloud threat-defense platform with an earn-trust governance model for autonomous containment actions. **Its design informed this project** — the fail-closed policy ordering, expiring delegated authority, and hash-chained audit. **No code was copied**; this is an independent implementation in a different language for a different domain (irreversible payments rather than reversible containment).
+
+- **The `circle` CLI and Circle's published skills** are used as tooling. Settlement shells out to the CLI rather than reimplementing its wallet handling — a dependency, not vendored source.
+
+- **[Kronagent](https://github.com/Aditya-galaxy/Kronagent)**, by the same author, is a cloud threat-defense platform with an earn-trust governance model for autonomous containment actions. **Its design informed this project** — the fail-closed policy ordering, expiring delegated authority, and hash-chained audit. **No code was copied**; this is an independent implementation in a different language for a different domain (irreversible payments rather than reversible containment).
 
 ## Documentation
 

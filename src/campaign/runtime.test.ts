@@ -222,3 +222,33 @@ describe('broadcasting is a separate decision from the network', () => {
     expect(walletOf(r)).toBeUndefined();
   });
 });
+
+describe('a tick never runs twice at once in one process', () => {
+  test('overlapping callers share the in-flight pass', async () => {
+    // Cloud Scheduler retries. Without this, a retry arriving mid-pass reads
+    // the same viewsPaidTo and calls the executor for payouts already sent.
+    let started = 0;
+    const runtime = new CampaignRuntime({
+      blobs: new MemoryBlobStore(),
+      env: {},
+      executor: {
+        async send() {
+          started += 1;
+          await new Promise((r) => setTimeout(r, 20));
+          return { intentId: 'i', executed: true, dryRun: true, detail: 'ok', settledAt: NOW.toISOString() };
+        },
+      },
+    });
+
+    const [a, b] = await Promise.all([runtime.tick(NOW), runtime.tick(NOW)]);
+    expect(a).toBe(b); // the same result object — one pass, not two
+    expect(started).toBe(0); // nothing to settle here; the point is it ran once
+  });
+
+  test('a later tick still runs once the first has finished', async () => {
+    const runtime = new CampaignRuntime({ blobs: new MemoryBlobStore(), env: {} });
+    const first = await runtime.tick(NOW);
+    const second = await runtime.tick(NOW);
+    expect(second).not.toBe(first); // not a stuck promise
+  });
+});
