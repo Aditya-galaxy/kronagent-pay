@@ -56,7 +56,12 @@ gcloud run deploy "$SERVICE" \
   --min-instances 0 \
   --max-instances 4 \
   --timeout 60s \
-  --set-env-vars "NODE_ENV=production,GCS_BUCKET=${BUCKET},TICK_SECRET=${TICK_SECRET:-},CAMPAIGN_WALLET=${CAMPAIGN_WALLET:-}"
+  --set-env-vars "NODE_ENV=production,GCS_BUCKET=${BUCKET},TICK_SECRET=${TICK_SECRET:-},CAMPAIGN_WALLET=${CAMPAIGN_WALLET:-},MAINNET_CAMPAIGN_WALLET=${MAINNET_CAMPAIGN_WALLET:-}"
+
+# ALLOW_MAINNET and BROADCAST are deliberately never forwarded here. Unset in
+# Cloud Run means estimate-only on testnet, which is the state a deploy should
+# land in; arming real money is a decision someone makes explicitly, not one
+# inherited from whatever happened to be in a laptop's shell.
 
 URL="$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" --format='value(status.url)')"
 echo

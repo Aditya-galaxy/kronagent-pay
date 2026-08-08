@@ -154,3 +154,71 @@ describe('choosing where state lives', () => {
     expect(chooseBlobStore({}).constructor.name).toBe('MemoryBlobStore');
   });
 });
+
+/* ───────────────── the wallet is chosen by the network ───────────────── */
+
+const TESTNET_W = '0xf461c5bb7e314670ae5c5eeb9929b15728ab2b6c';
+const MAINNET_W = '0x0003a59858f44451be2a5b486ee612b4139700f0';
+
+/** Reach into the built executor — this is exactly what must not drift. */
+const walletOf = (r: CampaignRuntime) =>
+  (r as unknown as { executor: { options?: { fromAddress?: string } } }).executor?.options
+    ?.fromAddress;
+const isDry = (r: CampaignRuntime) =>
+  (r as unknown as { executor: { dryRun?: boolean } }).executor?.dryRun;
+
+describe('a network mismatch cannot be configured', () => {
+  test('arming mainnet without a mainnet wallet refuses to start', () => {
+    // The dangerous configuration, and the one a single flag made expressible:
+    // mainnet armed while still pointed at the testnet wallet. It has to fail
+    // here, not at the first payout — the first payout is the one with money.
+    expect(
+      () => new CampaignRuntime({
+        blobs: new MemoryBlobStore(),
+        env: { ALLOW_MAINNET: 'true', CAMPAIGN_WALLET: TESTNET_W },
+      }),
+    ).toThrow(/MAINNET_CAMPAIGN_WALLET/);
+  });
+
+  test('unarmed uses the testnet wallet even when a mainnet one is present', () => {
+    const r = new CampaignRuntime({
+      blobs: new MemoryBlobStore(),
+      env: { CAMPAIGN_WALLET: TESTNET_W, MAINNET_CAMPAIGN_WALLET: MAINNET_W },
+    });
+    expect(walletOf(r)).toBe(TESTNET_W);
+  });
+
+  test('armed uses the mainnet wallet, never the testnet one', () => {
+    const r = new CampaignRuntime({
+      blobs: new MemoryBlobStore(),
+      env: { ALLOW_MAINNET: 'true', CAMPAIGN_WALLET: TESTNET_W, MAINNET_CAMPAIGN_WALLET: MAINNET_W },
+    });
+    expect(walletOf(r)).toBe(MAINNET_W);
+  });
+});
+
+describe('broadcasting is a separate decision from the network', () => {
+  test('armed for mainnet still only estimates until BROADCAST is set', () => {
+    // The two flags were one flag. Conflated, the only way to broadcast a
+    // testnet payout was to also unlock mainnet.
+    const r = new CampaignRuntime({
+      blobs: new MemoryBlobStore(),
+      env: { ALLOW_MAINNET: 'true', MAINNET_CAMPAIGN_WALLET: MAINNET_W },
+    });
+    expect(isDry(r)).toBe(true);
+  });
+
+  test('testnet can broadcast for real without unlocking mainnet', () => {
+    const r = new CampaignRuntime({
+      blobs: new MemoryBlobStore(),
+      env: { BROADCAST: 'true', CAMPAIGN_WALLET: TESTNET_W },
+    });
+    expect(isDry(r)).toBe(false);
+    expect(walletOf(r)).toBe(TESTNET_W);
+  });
+
+  test('no wallet at all settles nothing rather than guessing', () => {
+    const r = new CampaignRuntime({ blobs: new MemoryBlobStore(), env: {} });
+    expect(walletOf(r)).toBeUndefined();
+  });
+});
